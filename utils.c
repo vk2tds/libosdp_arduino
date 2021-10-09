@@ -42,12 +42,12 @@ void hexdump(const void *p, size_t len, const char *fmt, ...)
 	vprintf(fmt, args);
 	va_end(args);
 
-	printf(" [%zu] =>\n    0000  %02x ", len, data[0]);
+	printf(" [%x] =>\n    0000  %02x ", len, data[0]);
 	str[0] = isprint(data[0]) ? data[0] : '.';
 	for (i = 1; i < len; i++) {
 		if ((i & 0x0f) == 0) {
 			printf(" |%16s|", str);
-			printf("\n    %04zu  ", i);
+			printf("\n    %04x  ", i);
 		} else if((i & 0x07) == 0) {
 			printf(" ");
 		}

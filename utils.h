@@ -89,6 +89,7 @@
 #define __IS_ENABLED3(_i, val, ...)   val
 
 #define IS_ENABLED(x)                 __IS_ENABLED1(x)
+//#define IS_ENABLED (A) 
 
 /* gcc attribute shorthands */
 #ifndef __fallthrough
