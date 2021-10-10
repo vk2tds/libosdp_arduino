@@ -281,12 +281,12 @@ int osdp_phy_check_packet(struct osdp_pd *pd, uint8_t *buf, int len,
 
 	/* validate packet header */
 	if (pkt->som != OSDP_PKT_SOM) {
-		LOG_ERR("osdp_phy_check_packet - Invalid SOM 0x%02x", pkt->som);
+		LOG_ERR("Invalid SOM 0x%02x", pkt->som);
 		return OSDP_ERR_PKT_FMT;
 	}
 
 	if (is_cp_mode(pd) && !(pkt->pd_address & 0x80)) {
-		LOG_ERR("osdp_phy_check_packet - Reply without address MSB set!", pkt->pd_address);
+		LOG_ERR("Reply without address MSB set!", pkt->pd_address);
 		return OSDP_ERR_PKT_FMT;
 	}
 
@@ -300,7 +300,7 @@ int osdp_phy_check_packet(struct osdp_pd *pd, uint8_t *buf, int len,
 	if (pkt_len > OSDP_PACKET_BUF_SIZE) {
 		pd->reply_id = REPLY_NAK;
 		pd->ephemeral_data[0] = OSDP_PD_NAK_CMD_LEN;
-		LOG_ERR("osdp_phy_check_packet - Packet length too long?");
+		LOG_ERR("Packet length too long?");
 		return OSDP_ERR_PKT_NACK;
 	}
 
@@ -314,7 +314,7 @@ int osdp_phy_check_packet(struct osdp_pd *pd, uint8_t *buf, int len,
 		cur = (buf[pkt_len + 1] << 8) | buf[pkt_len];
 		comp = osdp_compute_crc16(buf, pkt_len);
 		if (comp != cur) {
-			LOG_ERR("osdp_phy_check_packet - Invalid crc 0x%04x/0x%04x", comp, cur);
+			LOG_ERR("Invalid crc 0x%04x/0x%04x", comp, cur);
 			pd->reply_id = REPLY_NAK;
 			pd->ephemeral_data[0] = OSDP_PD_NAK_MSG_CHK;
 			return OSDP_ERR_PKT_NACK;
@@ -336,7 +336,7 @@ int osdp_phy_check_packet(struct osdp_pd *pd, uint8_t *buf, int len,
 	if (pd_addr != pd->address && pd_addr != 0x7F) {
 		/* not addressed to us and was not broadcasted */
 		if (is_cp_mode(pd)) {
-			LOG_WRN("osdp_phy_check_packet - Invalid pd address %d", pd_addr);
+			LOG_WRN("Invalid pd address %d", pd_addr);
 			return OSDP_ERR_PKT_CHECK;
 		}
 		return OSDP_ERR_PKT_SKIP;
@@ -362,7 +362,7 @@ int osdp_phy_check_packet(struct osdp_pd *pd, uint8_t *buf, int len,
 			* TODO: PD must resend the last response if CP send the
 			* same sequence number again.
 			*/
-			LOG_ERR("osdp_phy_check_packet - seq-repeat/reply-resend not supported!");
+			LOG_ERR("seq-repeat/reply-resend not supported!");
 			pd->reply_id = REPLY_NAK;
 			pd->ephemeral_data[0] = OSDP_PD_NAK_SEQ_NUM;
 			return OSDP_ERR_PKT_NACK;
@@ -387,7 +387,7 @@ int osdp_phy_check_packet(struct osdp_pd *pd, uint8_t *buf, int len,
 		pd->ephemeral_data[0] = OSDP_PD_NAK_SEQ_NUM;
 		return OSDP_ERR_PKT_NACK;
 	}
-	LOG_ERR ("None vk2tds");
+	//LOG_ERR ("None vk2tds");
 	return OSDP_ERR_PKT_NONE;
 }
 

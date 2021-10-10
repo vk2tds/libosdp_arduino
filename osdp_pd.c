@@ -918,14 +918,16 @@ static int pd_send_reply(struct osdp_pd *pd)
 		return OSDP_PD_ERR_GENERIC;
 	}
 
-	#ifdef CONFIG_OSDP_DATA_TRACE
+	if (1==1){
+	//#ifdef CONFIG_OSDP_DATA_TRACE
 	//if (IS_ENABLED(CONFIG_OSDP_PACKET_TRACE)) {
 		if (pd->cmd_id != CMD_POLL) {
 			hexdump(pd->rx_buf, len, "OSDP: PD[%d]: Sent",
 				pd->address);
 		}
 	//}
-	#endif
+	//#endif
+	}
 
 	return OSDP_PD_ERR_NONE;
 }
@@ -981,6 +983,7 @@ static int pd_receive_and_process_command(struct osdp_pd *pd)
 	pd->tstamp = osdp_millis_now();
 	pd->rx_buf_len += len;
 
+	if (1==1){
 	//#ifdef CONFIG_OSDP_DATA_TRACE
 	//if (IS_ENABLED(CONFIG_OSDP_PACKET_TRACE)) {
 		/**
@@ -997,19 +1000,20 @@ static int pd_receive_and_process_command(struct osdp_pd *pd)
 		}
 		if (pd->rx_buf_len > pos && pd->rx_buf[pos] != CMD_POLL) {
 			hexdump(pd->rx_buf, pd->rx_buf_len,
-				"OSDP: PD[%d]: Received pd_receive_and_process_command", pd->address);
+				"OSDP: PD[%d]: Received", pd->address);
 		}
 	//}
 	//#endif
+	}
 
 	do {
 		err = pd_decode_packet(pd, &len);
 		if (err == OSDP_PD_ERR_NO_DATA) 
 			break;
-		LOG_ERR ("Removing %d bytes from buffer with len %d err %lx", len, pd->rx_buf_len, err);
+		LOG_DBG ("Removing %d bytes from buffer with len %d err %lx", len, pd->rx_buf_len, err);
 		if (pd->rx_buf_len >= 6){
 			if ((pd->rx_buf[0]==0xff) && (pd->rx_buf[1]==0x53)){
-				LOG_ERR ("...Address=%d LEN=%d MCI=%x", pd->rx_buf[2], pd->rx_buf[3] + (256*pd->rx_buf[4]), pd->rx_buf[5]);
+				LOG_DBG ("...Address=%d LEN=%d MCI=%x", pd->rx_buf[2], pd->rx_buf[3] + (256*pd->rx_buf[4]), pd->rx_buf[5]);
 			}
 		}
 		/* We are done with the packet (error or not). Remove processed bytes */
@@ -1030,7 +1034,7 @@ static int pd_receive_and_process_command(struct osdp_pd *pd)
 	if (pd->rx_buf_len > 6){
 		if ((pd->rx_buf[0] == 0xff) & (pd->rx_buf[1] == 0x53) & (pd->rx_buf[3] == 0xff) & (pd->rx_buf[4] == 0x53 )){
 			// Stuck Packet. Lets remove it because it seems there was some type of corruption. The particular use 
-			// case is FF 52 00 FF 53 ...... So, in this case, lets deal with the first three characters as if they 
+			// case is FF 53 00 FF 53 ...... So, in this case, lets deal with the first three characters as if they 
 			// were a real packet, and hope that they are not. Not sure what is causing this, apart from corruption on
 			// the serial line. 
 
@@ -1044,9 +1048,6 @@ static int pd_receive_and_process_command(struct osdp_pd *pd)
 			}
 			pd->rx_buf_len = remaining;
 		}
-
-
-
 	}
 
 
@@ -1088,7 +1089,7 @@ static void osdp_pd_update(struct osdp_pd *pd)
 		    osdp_millis_since(pd->tstamp) < OSDP_RESP_TOUT_MS) {
 			return;
 		}
-		LOG_DBG("osdp_pd_update OSDP_PD_ERR_NO_DATA rx_buf: %d", pd->rx_buf_len);
+		LOG_DBG("rx_buf: %d", pd->rx_buf_len);
 		hexdump(pd->rx_buf, pd->rx_buf_len, "Buf");
 	}
 
@@ -1205,11 +1206,14 @@ osdp_t *osdp_pd_setup(osdp_pd_info_t *info)
 		memcpy(pd->sc.scbk, info->scbk, 16);
 	}
 	SET_FLAG(pd, PD_FLAG_SC_CAPABLE);
-	#ifdef CONFIG_OSDP_DATA_TRACE
+	if (1==1){
+	//#ifdef CONFIG_OSDP_DATA_TRACE
 	//if (IS_ENABLED(CONFIG_OSDP_SKIP_MARK_BYTE)) {
 		SET_FLAG(pd, PD_FLAG_PKT_SKIP_MARK);
 	//}
-	#endif
+	//#endif
+	}
+
 	osdp_pd_set_attributes(pd, info->cap, &info->id);
 	osdp_pd_set_attributes(pd, osdp_pd_cap, NULL);
 
