@@ -1,0 +1,31 @@
+This is a form of the libosdp code, edited for the Arduino. Having said
+that, this code is likely too large for a ATMEGA328P. I have been working on
+a STM32F030R8, in the form of a Nucleo64 Board. 
+
+I hooked up the MAX232 to D2/D3/D8, which allowed debugging on the other
+serial port. 
+
+The LibOSDP library copies parts of the following codebases:
+	* https://github.com/goToMain/libosdp
+	* https://github.com/goToMain/c-utils/
+
+It also uses the TinyAES library from libosdp.
+
+There are numerous changes to make this fit into the Arduino structure,
+including leveling out the directory structure and including files from
+c-utils into this code base.
+
+Eventually I might physically fork things at a later date, but may not. I
+need to do more work for replacing numerous #defines.
+
+I have not even looked at osdp_cp.c. Numerous changes are likely needed
+
+There are two parts to this:
+	* Arduino .INO program
+	* Arduino LibOSDP Library
+
+These live in the following respositories respectively:
+	* https://github.com/vk2tds/libosdp_pd
+	* https://github.com/vk2tds/libosdp_arduino
+
+
