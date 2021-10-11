@@ -58,6 +58,8 @@ public:
 
 protected:
 	osdp_t *_ctx;
+
+
 };
 
 class ControlPanel : public Common {

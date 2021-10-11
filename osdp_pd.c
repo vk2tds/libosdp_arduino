@@ -963,6 +963,71 @@ static int pd_decode_packet(struct osdp_pd *pd, int *one_pkt_len)
 static int pd_receive_and_process_command(struct osdp_pd *pd)
 {
 	uint8_t *buf;
+	int len, err, remaining, pos;
+
+	buf = pd->rx_buf + pd->rx_buf_len;
+	remaining = sizeof(pd->rx_buf) - pd->rx_buf_len;
+
+	len = pd->channel.recv(pd->channel.data, buf, remaining);
+	if (len <= 0) { /* No data received */
+		return OSDP_PD_ERR_NO_DATA;
+	}
+
+	/**
+	 * We received some data on the bus; update pd->tstamp. A rouge CP can
+	 * send one byte at a time to extend this command's window but that
+	 * shouldn't cause any issues related to secure channel as it has it's
+	 * own timestamp.
+	 */
+	pd->tstamp = osdp_millis_now();
+	pd->rx_buf_len += len;
+
+	if (1==1) {
+
+//	if (IS_ENABLED(CONFIG_OSDP_PACKET_TRACE)) {
+		/**
+		 * A crude way of identifying and not printing poll messages
+		 * when CONFIG_OSDP_PACKET_TRACE is enabled. This is an early
+		 * print to catch errors so keeping it simple.
+		 * OSDP_CMD_ID_OFFSET + 2 is also checked as the CMD_ID can be
+		 * pushed back by 2 bytes if secure channel block is present in
+		 * header.
+		 */
+		pos = OSDP_CMD_ID_OFFSET;
+		if (sc_is_active(pd)) {
+			pos += 2;
+		}
+		if (pd->rx_buf_len > pos && pd->rx_buf[pos] != CMD_POLL) {
+			hexdump(pd->rx_buf, pd->rx_buf_len,
+				"OSDP: PD[%d]: Received", pd->address);
+		}
+	}
+
+	err = pd_decode_packet(pd, &len);
+
+	if (err == OSDP_PD_ERR_NO_DATA) {
+		return err;
+	}
+
+	/* We are done with the packet (error or not). Remove processed bytes */
+	remaining = pd->rx_buf_len - len;
+	if (remaining) {
+		memmove(pd->rx_buf, pd->rx_buf + len, remaining);
+	}
+
+	/**
+	 * Store remaining length that needs to be processed.
+	 * State machine will be updated accordingly.
+	 */
+	pd->rx_buf_len = remaining;
+
+	return err;
+}
+
+
+static int pd_receive_and_process_command_vk2tds(struct osdp_pd *pd)
+{
+	uint8_t *buf;
 	int len,  remaining, pos;
 	int err;
 
