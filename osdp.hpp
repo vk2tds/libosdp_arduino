@@ -5,6 +5,7 @@
  */
 
 #include <osdp.h>
+#include <tinyaes.h>
 
 /**
  * @file: LibOSDP classical wrapper. See osdp.h for documentation.
@@ -137,6 +138,17 @@ public:
 	{
 		return osdp_pd_notify_event(_ctx, event);
 	}
+};
+
+class Crypto : public Common{
+public:
+	void osdp_crypto_encrypt(uint8_t *key, uint8_t *iv, uint8_t *data, int len){
+		osdp_encrypt (key, iv, data, len);
+	};
+	void osdp_crypto_decrypt(uint8_t *key, uint8_t *iv, uint8_t *data, int len){
+		osdp_decrypt (key, iv, data, len);
+	};
+
 };
 
 }; /* namespace OSDP */
