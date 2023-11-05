@@ -43,6 +43,11 @@ extern "C" {
  */
 #define OSDP_FLAG_INSTALL_MODE 0x00020000
 
+#define OSDP_DEBUGFLAG_DATA_TRACE 0x00000001 // VK2TDS
+#define OSDP_DEBUGFLAG_PACKET_TRACE 0x0000002 // VK2TDS
+
+
+
 /**
  * @brief Various PD capability function codes.
  */
@@ -310,6 +315,7 @@ typedef struct {
 	int baud_rate;
 	int address;
 	int flags;
+	int debugflags;
 	struct osdp_pd_id id;
 	struct osdp_pd_cap *cap;
 	struct osdp_channel channel;

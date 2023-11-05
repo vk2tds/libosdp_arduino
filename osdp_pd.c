@@ -254,8 +254,7 @@ static int pd_decode_command(struct osdp_pd *pd, uint8_t *buf, int len)
 	pd->cmd_id = cmd.id = buf[pos++];
 	len--;
 
-	if (1==1){
-	//if (IS_ENABLED(CONFIG_OSDP_DATA_TRACE)) {
+	if (ISSET_DEBUGFLAG(pd, OSDP_DEBUGFLAG_DATA_TRACE)) {
 		if (pd->cmd_id != CMD_POLL) {
 			hexdump(buf, len, "OSDP: CMD: %s(%02x)",
 				osdp_cmd_name(pd->cmd_id), pd->cmd_id);
@@ -866,13 +865,11 @@ static int pd_build_reply(struct osdp_pd *pd, uint8_t *buf, int max_len)
 		len = 2;
 	}
 
-	if (1==1){
-	// if (IS_ENABLED(CONFIG_OSDP_DATA_TRACE)) {
+	if (ISSET_DEBUGFLAG(pd, OSDP_DEBUGFLAG_DATA_TRACE)) {
 		if (pd->cmd_id != CMD_POLL) {
 			hexdump(buf + 1, len - 1, "OSDP: REPLY: %s(%02x)",
 				osdp_reply_name(buf[0]), buf[0]);
 		}
-	//}
 	}
 
 	return len;
@@ -918,15 +915,11 @@ static int pd_send_reply(struct osdp_pd *pd)
 		return OSDP_PD_ERR_GENERIC;
 	}
 
-	if (1==1){
-	//#ifdef CONFIG_OSDP_DATA_TRACE
-	//if (IS_ENABLED(CONFIG_OSDP_PACKET_TRACE)) {
+	if (ISSET_DEBUGFLAG(pd, OSDP_DEBUGFLAG_DATA_TRACE)) {
 		if (pd->cmd_id != CMD_POLL) {
 			hexdump(pd->rx_buf, len, "OSDP: PD[%d]: Sent",
 				pd->address);
 		}
-	//}
-	//#endif
 	}
 
 	return OSDP_PD_ERR_NONE;
@@ -997,9 +990,11 @@ static int pd_receive_and_process_command(struct osdp_pd *pd)
 		if (sc_is_active(pd)) {
 			pos += 2;
 		}
-		if (pd->rx_buf_len > pos && pd->rx_buf[pos] != CMD_POLL) {
-			hexdump(pd->rx_buf, pd->rx_buf_len,
-				"OSDP: PD[%d]: Received", pd->address);
+		if (ISSET_DEBUGFLAG(pd, OSDP_DEBUGFLAG_DATA_TRACE)){
+			if (pd->rx_buf_len > pos && pd->rx_buf[pos] != CMD_POLL) {
+				hexdump(pd->rx_buf, pd->rx_buf_len,
+					"OSDP: PD[%d]: Received", pd->address);
+			}
 		}
 	}
 
@@ -1048,9 +1043,7 @@ static int pd_receive_and_process_command_vk2tds(struct osdp_pd *pd)
 	pd->tstamp = osdp_millis_now();
 	pd->rx_buf_len += len;
 
-	if (1==1){
-	//#ifdef CONFIG_OSDP_DATA_TRACE
-	//if (IS_ENABLED(CONFIG_OSDP_PACKET_TRACE)) {
+	if (IS_ENABLED(CONFIG_OSDP_PACKET_TRACE)) {
 		/**
 		 * A crude way of identifying and not printing poll messages
 		 * when CONFIG_OSDP_PACKET_TRACE is enabled. This is an early
@@ -1063,12 +1056,12 @@ static int pd_receive_and_process_command_vk2tds(struct osdp_pd *pd)
 		if (sc_is_active(pd)) {
 			pos += 2;
 		}
-		if (pd->rx_buf_len > pos && pd->rx_buf[pos] != CMD_POLL) {
-			hexdump(pd->rx_buf, pd->rx_buf_len,
-				"OSDP: PD[%d]: Received", pd->address);
+		if (ISSET_DEBUGFLAG(pd, OSDP_DEBUGFLAG_DATA_TRACE)){
+			if (pd->rx_buf_len > pos && pd->rx_buf[pos] != CMD_POLL) {
+				hexdump(pd->rx_buf, pd->rx_buf_len,
+					"OSDP: PD[%d]: Received", pd->address);
+			}
 		}
-	//}
-	//#endif
 	}
 
 	do {
@@ -1155,7 +1148,9 @@ static void osdp_pd_update(struct osdp_pd *pd)
 			return;
 		}
 		LOG_DBG("rx_buf: %d", pd->rx_buf_len);
-		hexdump(pd->rx_buf, pd->rx_buf_len, "Buf");
+		if (ISSET_DEBUGFLAG(pd, OSDP_DEBUGFLAG_DATA_TRACE)){
+			hexdump(pd->rx_buf, pd->rx_buf_len, "Buf");
+		}
 	}
 
 	if (ret != OSDP_PD_ERR_NONE && ret != OSDP_PD_ERR_REPLY) {
@@ -1251,6 +1246,7 @@ osdp_t *osdp_pd_setup(osdp_pd_info_t *info)
 	pd->baud_rate = info->baud_rate;
 	pd->address = info->address;
 	pd->flags = info->flags;
+	pd->debugflags = info->debugflags; // vk2tds
 	pd->seq_number = -1;
 	memcpy(&pd->channel, &info->channel, sizeof(struct osdp_channel));
 
