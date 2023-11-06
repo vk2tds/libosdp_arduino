@@ -4,6 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#ifndef LIBOSDP_OSDP_HPP_
+#define LIBOSDP_OSDP_HPP_
+
 #include <osdp.h>
 #include <tinyaes.h>
 
@@ -17,9 +20,10 @@ class Common {
 public:
 	Common() {}
 
-	void logger_init(int log_level, osdp_log_fn_t log_fn)
+	void logger_init(const char *name, int log_level,
+			 osdp_log_puts_fn_t puts_fn)
 	{
-		osdp_logger_init(log_level, log_fn);
+		osdp_logger_init(name, log_level, puts_fn);
 	}
 
 	const char *get_version()
@@ -42,11 +46,6 @@ public:
 		osdp_get_sc_status_mask(_ctx, bitmask);
 	}
 
-	void set_command_complete_callback(osdp_command_complete_callback_t cb)
-	{
-		osdp_set_command_complete_callback(_ctx, cb);
-	}
-
 	int file_register_ops(int pd, struct osdp_file_ops *ops)
 	{
 		return osdp_file_register_ops(_ctx, pd, ops);
@@ -67,16 +66,19 @@ class ControlPanel : public Common {
 public:
 	ControlPanel()
 	{
+		_ctx = nullptr;
 	}
 
 	~ControlPanel()
 	{
-		osdp_cp_teardown(_ctx);
+		if (_ctx) {
+			osdp_cp_teardown(_ctx);
+		}
 	}
 
-	bool setup(int num_pd, osdp_pd_info_t *info, uint8_t *master_key)
+	bool setup(int num_pd, osdp_pd_info_t *info)
 	{
-		_ctx = osdp_cp_setup(num_pd, info, master_key);
+		_ctx = osdp_cp_setup(num_pd, info);
 		return _ctx != nullptr;
 	}
 
@@ -111,11 +113,14 @@ class PeripheralDevice : public Common {
 public:
 	PeripheralDevice()
 	{
+		_ctx = nullptr;
 	}
 
 	~PeripheralDevice()
 	{
-		osdp_pd_teardown(_ctx);
+		if (_ctx) {
+			osdp_pd_teardown(_ctx);
+		}
 	}
 
 	bool setup(osdp_pd_info_t *info)
@@ -129,7 +134,7 @@ public:
 		osdp_pd_refresh(_ctx);
 	}
 
-	void set_command_callback(pd_commnand_callback_t cb)
+	void set_command_callback(pd_command_callback_t cb)
 	{
 		osdp_pd_set_command_callback(_ctx, cb, _ctx);
 	}
@@ -138,17 +143,13 @@ public:
 	{
 		return osdp_pd_notify_event(_ctx, event);
 	}
-};
 
-class Crypto : public Common{
-public:
-	void osdp_crypto_encrypt(uint8_t *key, uint8_t *iv, uint8_t *data, int len){
-		osdp_encrypt (key, iv, data, len);
-	};
-	void osdp_crypto_decrypt(uint8_t *key, uint8_t *iv, uint8_t *data, int len){
-		osdp_decrypt (key, iv, data, len);
-	};
-
+	int flush_events()
+	{
+		return osdp_pd_flush_events(_ctx);
+	}
 };
 
 }; /* namespace OSDP */
+
+#endif // LIBOSDP_OSDP_HPP_

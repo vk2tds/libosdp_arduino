@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
+ * Copyright (c) 2020-2023 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,7 +8,7 @@
 #define _OSDP_CONFIG_H_
 
 /**
- * @brief The following macros are defined defined from the variabled in cmake
+ * @brief The following macros are defined defined from the variable in cmake
  * files. All @XXX@ are replaced by the value of XXX as resolved by cmake.
  */
 #define PROJECT_VERSION                "@PROJECT_VERSION@"
@@ -17,6 +17,7 @@
 #define GIT_REV                        "@GIT_REV@"
 #define GIT_TAG                        "@GIT_TAG@"
 #define GIT_DIFF                       "@GIT_DIFF@"
+#define REPO_ROOT                      "@REPO_ROOT@"
 
 /**
  * @brief Other OSDP constants
@@ -27,15 +28,11 @@
 #define OSDP_RESP_TOUT_MS                       (200)
 #define OSDP_ONLINE_RETRY_WAIT_MAX_MS           (300 * 1000)
 #define OSDP_CMD_RETRY_WAIT_MS                  (300)
-#define OSDP_PACKET_BUF_SIZE                    (512)
+#define OSDP_PACKET_BUF_SIZE                    (256)
+#define OSDP_RX_RB_SIZE                         (512)
 #define OSDP_CP_CMD_POOL_SIZE                   (32)
 #define OSDP_FILE_ERROR_RETRY_MAX               (10)
 #define OSDP_PD_MAX                             (126)
-
-#ifndef CONFIG_OSDP_SKIP_MARK_BYTE
-#define OSDP_CMD_ID_OFFSET 6
-#else
-#define OSDP_CMD_ID_OFFSET 5
-#endif
+#define OSDP_CMD_ID_OFFSET                      (5)
 
 #endif /* _OSDP_CONFIG_H_ */

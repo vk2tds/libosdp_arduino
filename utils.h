@@ -9,6 +9,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 #ifndef NULL
 #define NULL                           ((void *)0)
@@ -22,17 +23,24 @@
 #define FALSE                          (0)
 #endif
 
-#define BIT(x)				(1ULL << (x))
-
 #define BYTE_0(x)                      (uint8_t)(((x) >>  0) & 0xFF)
 #define BYTE_1(x)                      (uint8_t)(((x) >>  8) & 0xFF)
 #define BYTE_2(x)                      (uint8_t)(((x) >> 16) & 0xFF)
 #define BYTE_3(x)                      (uint8_t)(((x) >> 24) & 0xFF)
 
+#define BIT(n)                         (1ull << (n))
+#define MASK(n)                        (BIT((n) + 1) - 1)
+#define BIT_IS_SET(m, n)               (bool)((m) & BIT(n))
+#define BIT_SET(m, n)                  ((m) |=  BIT(n))
+#define BIT_CLEAR(m, n)                ((m) &= ~BIT(n))
+#define BIT_FLIP(m, n)                 ((m) ^=  BIT(n))
+#define BIT_TEST_SET(m, n)             ({ BIT_IS_SET(m, n) ? false : (bool) BIT_SET(m, n) })
+
 #define ARG_UNUSED(x)                  (void)(x)
 
 #define STR(x) #x
 #define XSTR(x) STR(x)
+#define STRINGIFY(x) #x
 
 #define ROUND_UP(x, y) ((x + y - 1) & ~ (y - 1))
 
@@ -82,6 +90,7 @@
 		*(volatile typeof(x) *)__xp = (val); \
 	} while (0)
 
+#define ABS(x)		((x) >= 0  ? (x) : -(x))
 /* config_enabled() from the kernel */
 #define __IS_ENABLED1(x)             __IS_ENABLED2(__XXXX ## x)
 #define __XXXX1                       __YYYY,
@@ -89,7 +98,6 @@
 #define __IS_ENABLED3(_i, val, ...)   val
 
 #define IS_ENABLED(x)                 __IS_ENABLED1(x)
-//#define IS_ENABLED (A) 
 
 /* gcc attribute shorthands */
 #ifndef __fallthrough
@@ -108,17 +116,22 @@
 #define __weak          __attribute__((weak))
 
 /**
- * @brief Return random number between `min` and `max` both inclusive.
+ * @brief Return random number between 0 and `limit` both inclusive.
  *
  * Note: the random number generator must be pre-seeded.
  */
-int randint(int min, int max);
+int randint(int limit);
 
 /**
  * @brief Rounds up 32-bit v to nearest power of 2. If v is already a power
  * of 2 it is returned unmodified.
  */
 uint32_t round_up_pow2(uint32_t v);
+
+/**
+ * @brief Retruns number of digits in a given number in its decimal form.
+ */
+int num_digits_in_number(int num);
 
 /**
  * @brief Dumps an array of bytes in HEX and ASCII formats for debugging. `head`
@@ -132,16 +145,16 @@ uint32_t round_up_pow2(uint32_t v);
  */
 void hexdump(const void *data, size_t len, const char *fmt, ...);
 
-///**
-// * @brief Get the time in micro seconds.
-// */
-//int64_t usec_now();
+/**
+ * @brief Get the time in micro seconds.
+ */
+int64_t usec_now();
 
-///**
-// * @brief Get time elapsed in micro seconds since `last`. Used along with
-// * usec_now().
-// */
-//int64_t usec_since(int64_t last);
+/**
+ * @brief Get time elapsed in micro seconds since `last`. Used along with
+ * usec_now().
+ */
+int64_t usec_since(int64_t last);
 
 /**
  * @brief Get the time in milli seconds.
@@ -153,5 +166,50 @@ int64_t millis_now();
  * millis_now().
  */
 int64_t millis_since(int64_t last);
+
+/**
+ * @brief Print the stack trace
+ */
+void dump_trace(void);
+
+static inline bool char_is_space(int c)
+{
+	unsigned char d = c - 9;
+	return (0x80001FU >> (d & 31)) & (1U >> (d >> 5));
+}
+
+static inline bool char_is_digit(int c)
+{
+	return (unsigned int)(('0' - 1 - c) & (c - ('9' + 1))) >> (sizeof(c) * 8 - 1);
+}
+
+static inline bool char_is_alpha(int c)
+{
+	return (unsigned int)(('a' - 1 - (c | 32)) & ((c | 32) - ('z' + 1))) >> (sizeof(c) * 8 - 1);
+}
+
+inline uint8_t u8_bit_reverse(uint8_t b)
+{
+	b = (((b & 0xaa) >> 1) | ((b & 0x55) << 1));
+	b = (((b & 0xcc) >> 2) | ((b & 0x33) << 2));
+	return ((b >> 4) |  (b << 4));
+}
+
+inline uint16_t u16_bit_reverse(uint16_t x)
+{
+	x = (((x & 0xaaaa) >> 1) | ((x & 0x5555) << 1));
+	x = (((x & 0xcccc) >> 2) | ((x & 0x3333) << 2));
+	x = (((x & 0xf0f0) >> 4) | ((x & 0x0f0f) << 4));
+	return((x >> 8) | (x << 8));
+}
+
+inline uint32_t u32_bit_reverse(uint32_t x)
+{
+	x = (((x & 0xaaaaaaaa) >> 1) | ((x & 0x55555555) << 1));
+	x = (((x & 0xcccccccc) >> 2) | ((x & 0x33333333) << 2));
+	x = (((x & 0xf0f0f0f0) >> 4) | ((x & 0x0f0f0f0f) << 4));
+	x = (((x & 0xff00ff00) >> 8) | ((x & 0x00ff00ff) << 8));
+	return ((x >> 16) | (x << 16));
+}
 
 #endif /* _UTILS_UTILS_H_ */

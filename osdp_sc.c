@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
+ * Copyright (c) 2019-2023 Siddharth Chandrasekaran <sidcha.dev@gmail.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,7 +7,7 @@
 #include "osdp_common.h"
 #include "tinyaes.h"
 
-#define OSDP_SC_EOM_MARKER 0x80 /* End of Message Marker */
+#define OSDP_SC_EOM_MARKER             0x80  /* End of Message Marker */
 
 /* Default key as specified in OSDP specification */
 static const uint8_t osdp_scbk_default[16] = {
@@ -169,7 +169,7 @@ int osdp_encrypt_data(struct osdp_pd *pd, int is_cmd, uint8_t *data, int length)
 	int i, pad_len;
 	uint8_t iv[16];
 
-	data[length] = OSDP_SC_EOM_MARKER; /* append EOM marker */
+	data[length] = OSDP_SC_EOM_MARKER;  /* append EOM marker */
 	pad_len = AES_PAD_LEN(length + 1);
 	if ((pad_len - length - 1) > 0) {
 		memset(data + length + 1, 0, pad_len - length - 1);
@@ -184,8 +184,8 @@ int osdp_encrypt_data(struct osdp_pd *pd, int is_cmd, uint8_t *data, int length)
 	return pad_len;
 }
 
-int osdp_compute_mac(struct osdp_pd *pd, int is_cmd, const uint8_t *data,
-		     int len)
+int osdp_compute_mac(struct osdp_pd *pd, int is_cmd,
+		     const uint8_t *data, int len)
 {
 	int pad_len;
 	uint8_t buf[OSDP_PACKET_BUF_SIZE] = { 0 };
@@ -242,7 +242,7 @@ void osdp_sc_setup(struct osdp_pd *pd)
 		pd->sc.pd_client_uid[6] = BYTE_2(pd->id.serial_number);
 		pd->sc.pd_client_uid[7] = BYTE_3(pd->id.serial_number);
 	} else {
-		osdp_get_rand(pd->sc.cp_random, 8);
+		osdp_fill_random(pd->sc.cp_random, 8);
 	}
 }
 

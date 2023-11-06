@@ -19,9 +19,18 @@
 #include "slab.h"
 #include "tinyaes_src.h"
 
+#define USE_CUSTOM_LOGGER
+#include <logger.h> // vk2tds
+
 #include <osdp.h>
+#include "osdp_config.h"
+
+#define CONFIG_NO_GENERATED_HEADERS // VK2TDS
+
+#ifndef CONFIG_NO_GENERATED_HEADERS
 #include "osdp_config.h" /* generated */
-//#include "osdp_export.h" /* generated */
+#include "osdp_export.h" /* generated */
+#endif
 
 #ifndef NULL
 #define NULL ((void *)0)
@@ -30,6 +39,15 @@
 #define OSDP_CTX_MAGIC 0xDEADBEAF
 
 #define ARG_UNUSED(x) (void)(x)
+
+#define LOG_EM(...)    __logger_log(&pd->logger, LOG_EMERG,  __FILE__, __LINE__, __VA_ARGS__)
+#define LOG_ALERT(...) __logger_log(&pd->logger, LOG_ALERT,  __FILE__, __LINE__, __VA_ARGS__)
+#define LOG_CRIT(...)  __logger_log(&pd->logger, LOG_CRIT,   __FILE__, __LINE__, __VA_ARGS__)
+#define LOG_ERR(...)   __logger_log(&pd->logger, LOG_ERR,    __FILE__, __LINE__, __VA_ARGS__)
+#define LOG_INF(...)   __logger_log(&pd->logger, LOG_INFO,   __FILE__, __LINE__, __VA_ARGS__)
+#define LOG_WRN(...)   __logger_log(&pd->logger, LOG_WARNING,__FILE__, __LINE__, __VA_ARGS__)
+#define LOG_NOT(...)   __logger_log(&pd->logger, LOG_NOTICE, __FILE__, __LINE__, __VA_ARGS__)
+#define LOG_DBG(...)   __logger_log(&pd->logger, LOG_DEBUG,  __FILE__, __LINE__, __VA_ARGS__)
 
 #define ISSET_FLAG(p, f) (((p)->flags & (f)) == (f))
 #define SET_FLAG(p, f)	 ((p)->flags |= (f))
@@ -60,13 +78,15 @@
 
 #define OSDP_QUEUE_SLAB_SIZE                                                   \
 	(OSDP_CP_CMD_POOL_SIZE *                                               \
-	 (sizeof(struct osdp_cmd) + sizeof(queue_node_t)))
+	 (sizeof(union osdp_ephemeral_data) + sizeof(queue_node_t)))
 
 #define safe_free(p)                                                           \
 	if (p)                                                                 \
 	free(p)
 
-/* Unused type only to estmate ephemeral_data size */
+#define osdp_dump hexdump // for zephyr compatibility.
+
+/* Unused type only to estimate ephemeral_data size */
 union osdp_ephemeral_data {
 	struct osdp_cmd cmd;
 	struct osdp_event event;
@@ -88,7 +108,7 @@ union osdp_ephemeral_data {
 	assert(TO_OSDP(ctx)->_magic == OSDP_CTX_MAGIC);
 #define input_check_pd_offset(ctx, pd)                                         \
 	if (pd < 0 || pd >= NUM_PD(ctx)) {                                     \
-		LOG_ERR("Invalid PD number %d", pd);                           \
+		LOG_PRINT("Invalid PD number %d", pd);                         \
 		return -1;                                                     \
 	}
 #define input_check2(_1, _2)                                                   \
@@ -106,7 +126,6 @@ union osdp_ephemeral_data {
 #define CMD_POLL	 0x60
 #define CMD_ID		 0x61
 #define CMD_CAP		 0x62
-#define CMD_DIAG	 0x63
 #define CMD_LSTAT	 0x64
 #define CMD_ISTAT	 0x65
 #define CMD_OSTAT	 0x66
@@ -118,22 +137,19 @@ union osdp_ephemeral_data {
 #define CMD_RMODE	 0x6C
 #define CMD_TDSET	 0x6D
 #define CMD_COMSET	 0x6E
-#define CMD_DATA	 0x6F
-#define CMD_XMIT	 0x70
-#define CMD_PROMPT	 0x71
-#define CMD_SPE		 0x72
 #define CMD_BIOREAD	 0x73
 #define CMD_BIOMATCH	 0x74
 #define CMD_KEYSET	 0x75
 #define CMD_CHLNG	 0x76
 #define CMD_SCRYPT	 0x77
-#define CMD_CONT	 0x79
-#define CMD_ABORT	 0x7A
-#define CMD_FILETRANSFER 0x7C
 #define CMD_ACURXSIZE	 0x7B
+#define CMD_FILETRANSFER 0x7C
 #define CMD_MFG		 0x80
-#define CMD_SCDONE	 0xA0
 #define CMD_XWR		 0xA1
+#define CMD_ABORT	 0xA2
+#define CMD_PIVDATA	 0xA3
+#define CMD_GENAUTH	 0xA4
+#define CMD_CRAUTH	 0xA5
 #define CMD_KEEPACTIVE	 0xA7
 
 /**
@@ -149,18 +165,20 @@ union osdp_ephemeral_data {
 #define REPLY_RSTATR	0x4B
 #define REPLY_RAW	0x50
 #define REPLY_FMT	0x51
-#define REPLY_PRES	0x52
 #define REPLY_KEYPPAD	0x53
 #define REPLY_COM	0x54
-#define REPLY_SCREP	0x55
-#define REPLY_SPER	0x56
 #define REPLY_BIOREADR	0x57
 #define REPLY_BIOMATCHR 0x58
 #define REPLY_CCRYPT	0x76
+#define REPLY_BUSY	0x79
 #define REPLY_RMAC_I	0x78
 #define REPLY_FTSTAT	0x7A
+#define REPLY_PIVDATAR	0x80
+#define REPLY_GENAUTHR	0x81
+#define REPLY_CRAUTHR	0x82
+#define REPLY_MFGSTATR	0x83
+#define REPLY_MFGERRR	0x84
 #define REPLY_MFGREP	0x90
-#define REPLY_BUSY	0x79
 #define REPLY_XRD	0xB1
 
 /**
@@ -192,17 +210,6 @@ union osdp_ephemeral_data {
 #define PD_FLAG_HAS_SCBK       BIT(12) /* PD has a dedicated SCBK */
 #define PD_FLAG_SC_DISABLED    BIT(13) /* master_key=NULL && scbk=NULL */
 
-/* logging short hands */
-#define LOG_EM(...)    osdp_log(OSDP_LOG_EMERG, LOG_TAG __VA_ARGS__)
-#define LOG_ALERT(...) osdp_log(OSDP_LOG_ALERT, LOG_TAG __VA_ARGS__)
-#define LOG_CRIT(...)  osdp_log(OSDP_LOG_CRIT, LOG_TAG __VA_ARGS__)
-#define LOG_ERR(...)   osdp_log(OSDP_LOG_ERROR, LOG_TAG __VA_ARGS__)
-#define LOG_INF(...)   osdp_log(OSDP_LOG_INFO, LOG_TAG __VA_ARGS__)
-#define LOG_WRN(...)   osdp_log(OSDP_LOG_WARNING, LOG_TAG __VA_ARGS__)
-#define LOG_NOT(...)   osdp_log(OSDP_LOG_NOTICE, LOG_TAG __VA_ARGS__)
-#define LOG_DBG(...)   osdp_log(OSDP_LOG_DEBUG, LOG_TAG __VA_ARGS__)
-#define LOG_PRINT(...) osdp_log(-1, LOG_TAG __VA_ARGS__)
-
 enum osdp_cp_phy_state_e {
 	OSDP_CP_PHY_STATE_IDLE,
 	OSDP_CP_PHY_STATE_SEND_CMD,
@@ -211,7 +218,7 @@ enum osdp_cp_phy_state_e {
 	OSDP_CP_PHY_STATE_ERR,
 };
 
-enum osdp_state_e {
+enum osdp_cp_state_e {
 	OSDP_CP_STATE_INIT,
 	OSDP_CP_STATE_IDREQ,
 	OSDP_CP_STATE_CAPDET,
@@ -231,7 +238,7 @@ enum osdp_pkt_errors_e {
 	 */
 	OSDP_ERR_PKT_FMT = -1,
 	/**
-	 * Not enough data in buffer; wait for more data (or timeout).
+	 * Not enough data in buffer (but we have some); wait for more.
 	 */
 	OSDP_ERR_PKT_WAIT = -2,
 	/**
@@ -255,6 +262,14 @@ enum osdp_pkt_errors_e {
 	 * also filled.
 	 */
 	OSDP_ERR_PKT_NACK = -6,
+	/**
+	 * Packet build errors
+	 */
+	OSDP_ERR_PKT_BUILD = -7,
+	/**
+	 * No data received (do not confuse with OSDP_ERR_PKT_WAIT)
+	 */
+	OSDP_ERR_PKT_NO_DATA = -8,
 };
 
 struct osdp_slab {
@@ -278,6 +293,12 @@ struct osdp_secure_channel {
 	uint8_t pd_cryptogram[16];
 };
 
+struct osdp_rb {
+    size_t head;
+    size_t tail;
+    uint8_t buffer[OSDP_RX_RB_SIZE];
+};
+
 struct osdp_queue {
 	queue_t queue;
 	slab_t slab;
@@ -285,6 +306,7 @@ struct osdp_queue {
 };
 
 struct osdp_pd {
+	const char *name;
 	struct osdp *osdp_ctx; /* Ref to osdp * to access shared resources */
 	int idx;               /* Offset into osdp->pd[] for this PD */
 	uint32_t flags;        /* Used with: ISSET_FLAG, SET_FLAG, CLEAR_FLAG */
@@ -305,12 +327,13 @@ struct osdp_pd {
 	int64_t sc_tstamp;     /* Last received secure reply time in ticks */
 	int64_t phy_tstamp;    /* Time in ticks since command was sent */
 
-	uint16_t peer_rx_size; /* Receieve buffer size of the peer PD/CP */
+	uint16_t peer_rx_size; /* Receive buffer size of the peer PD/CP */
 
 	/* Raw bytes received from the serial line for this PD */
-	uint8_t rx_buf[OSDP_PACKET_BUF_SIZE];
-
-	int rx_buf_len;        /* Number of bytes in pd->rx_buf */
+	struct osdp_rb rx_rb;
+	uint8_t packet_buf[OSDP_PACKET_BUF_SIZE];
+	int packet_len;
+	int packet_buf_len;
 
 	int cmd_id;            /* Currently processing command ID */
 	int reply_id;          /* Currently processing reply ID */
@@ -329,7 +352,9 @@ struct osdp_pd {
 
 	/* PD command callback to app with opaque arg pointer as passed by app */
 	void *command_callback_arg;
-	pd_commnand_callback_t command_callback;
+	pd_command_callback_t command_callback;
+
+	logger_t logger;       /* logger context (from utils/logger.h) */
 };
 
 struct osdp {
@@ -341,7 +366,11 @@ struct osdp {
 	int *channel_lock;     /* array of length NUM_PD() to lock a channel */
 	uint8_t sc_master_key[16]; /* Secure Channel master key (deprecated) */
 
-	/* OSDP defined command complete callback subscription */
+	/**
+	 * OSDP defined command complete callback subscription with opaque arg
+	 * pointer as passed by app
+	 **/
+	void *command_complete_callback_arg;
 	osdp_command_complete_callback_t command_complete_callback;
 
 	/* CP event callback to app with opaque arg pointer as passed by app */
@@ -349,51 +378,84 @@ struct osdp {
 	cp_event_callback_t event_callback;
 };
 
+#ifdef CONFIG_OSDP_STATIC_PD
+static inline void cp_keyset_complete(struct osdp_pd *pd) { }
+#else
+void cp_keyset_complete(struct osdp_pd *pd);
+#endif
+
 void osdp_keyset_complete(struct osdp_pd *pd);
 
 /* from osdp_phy.c */
 int osdp_phy_packet_init(struct osdp_pd *p, uint8_t *buf, int max_len);
-int osdp_phy_packet_finalize(struct osdp_pd *p, uint8_t *buf, int len,
-			     int max_len);
-int osdp_phy_check_packet(struct osdp_pd *pd, uint8_t *buf, int len,
-			  int *one_pkt_len);
-int osdp_phy_decode_packet(struct osdp_pd *p, uint8_t *buf, int len,
-			   uint8_t **pkt_start);
-void osdp_phy_state_reset(struct osdp_pd *pd);
+int osdp_phy_check_packet(struct osdp_pd *pd);
+int osdp_phy_decode_packet(struct osdp_pd *p, uint8_t **pkt_start);
+void osdp_phy_state_reset(struct osdp_pd *pd, bool is_error);
 int osdp_phy_packet_get_data_offset(struct osdp_pd *p, const uint8_t *buf);
 uint8_t *osdp_phy_packet_get_smb(struct osdp_pd *p, const uint8_t *buf);
+int osdp_phy_send_packet(struct osdp_pd *pd, uint8_t *buf,
+			 int len, int max_len);
+
+/* from osdp_common.c */
+__weak int64_t osdp_millis_now(void);
+int64_t osdp_millis_since(int64_t last);
+uint16_t osdp_compute_crc16(const uint8_t *buf, size_t len);
+
+const char *osdp_cmd_name(int cmd_id);
+const char *osdp_reply_name(int reply_id);
+
+int osdp_rb_push(struct osdp_rb *p, uint8_t data);
+int osdp_rb_push_buf(struct osdp_rb *p, uint8_t *buf, int len);
+int osdp_rb_pop(struct osdp_rb *p, uint8_t *data);
+int osdp_rb_pop_buf(struct osdp_rb *p, uint8_t *buf, int max_len);
+
+void osdp_crypt_setup();
+void osdp_encrypt(uint8_t *key, uint8_t *iv, uint8_t *data, int len);
+void osdp_decrypt(uint8_t *key, uint8_t *iv, uint8_t *data, int len);
+void osdp_fill_random(uint8_t *buf, int len);
+void osdp_crypt_teardown();
 
 /* from osdp_sc.c */
-void osdp_compute_scbk(struct osdp_pd *p, uint8_t *master_key, uint8_t *scbk);
-void osdp_compute_session_keys(struct osdp_pd *p);
-void osdp_compute_cp_cryptogram(struct osdp_pd *p);
-int osdp_verify_cp_cryptogram(struct osdp_pd *p);
-void osdp_compute_pd_cryptogram(struct osdp_pd *p);
-int osdp_verify_pd_cryptogram(struct osdp_pd *p);
-void osdp_compute_rmac_i(struct osdp_pd *p);
-int osdp_decrypt_data(struct osdp_pd *p, int is_cmd, uint8_t *data, int length);
-int osdp_encrypt_data(struct osdp_pd *p, int is_cmd, uint8_t *data, int length);
-int osdp_compute_mac(struct osdp_pd *p, int is_cmd, const uint8_t *data,
-		     int len);
-void osdp_sc_setup(struct osdp_pd *p);
+void osdp_compute_scbk(struct osdp_pd *pd, uint8_t *master_key, uint8_t *scbk);
+void osdp_compute_session_keys(struct osdp_pd *pd);
+void osdp_compute_cp_cryptogram(struct osdp_pd *pd);
+int osdp_verify_cp_cryptogram(struct osdp_pd *pd);
+void osdp_compute_pd_cryptogram(struct osdp_pd *pd);
+int osdp_verify_pd_cryptogram(struct osdp_pd *pd);
+void osdp_compute_rmac_i(struct osdp_pd *pd);
+int osdp_decrypt_data(struct osdp_pd *pd, int is_cmd, uint8_t *data, int len);
+int osdp_encrypt_data(struct osdp_pd *pd, int is_cmd, uint8_t *data, int len);
+int osdp_compute_mac(struct osdp_pd *pd, int is_cmd,
+		     const uint8_t *data, int len);
+void osdp_sc_setup(struct osdp_pd *pd);
 void osdp_sc_teardown(struct osdp_pd *pd);
+
+static inline int get_tx_buf_size(struct osdp_pd *pd)
+{
+	int packet_buf_size = sizeof(pd->packet_buf);
+
+	if (pd->peer_rx_size) {
+		packet_buf_size = MIN(packet_buf_size, (int)pd->peer_rx_size);
+	}
+	return packet_buf_size;
+}
 
 static inline struct osdp *pd_to_osdp(struct osdp_pd *pd)
 {
 	return pd->osdp_ctx;
 }
 
-static inline struct osdp_pd *osdp_to_pd(struct osdp *ctx, int pd_idx)
+static inline struct osdp_pd *osdp_to_pd(const struct osdp *ctx, int pd_idx)
 {
 	return ctx->pd + pd_idx;
 }
 
-static inline bool is_pd_mode(struct  osdp_pd *pd)
+static inline bool is_pd_mode(struct osdp_pd *pd)
 {
 	return ISSET_FLAG(pd, PD_FLAG_PD_MODE);
 }
 
-static inline bool is_cp_mode(struct  osdp_pd *pd)
+static inline bool is_cp_mode(struct osdp_pd *pd)
 {
 	return !ISSET_FLAG(pd, PD_FLAG_PD_MODE);
 }
@@ -427,22 +489,4 @@ static inline void sc_deactivate(struct osdp_pd *pd)
 	CLEAR_FLAG(pd, PD_FLAG_SC_ACTIVE);
 }
 
-/* from osdp_common.c */
-__weak int64_t osdp_millis_now(void);
-int64_t osdp_millis_since(int64_t last);
-uint16_t osdp_compute_crc16(const uint8_t *buf, size_t len);
-void osdp_log(int log_level, const char *fmt, ...);
-void osdp_log_ctx_set(int log_ctx);
-void osdp_log_ctx_reset();
-void osdp_log_ctx_restore();
-
-const char *osdp_cmd_name(int cmd_id);
-const char *osdp_reply_name(int reply_id);
-
-void osdp_crypt_setup();
-void osdp_encrypt(uint8_t *key, uint8_t *iv, uint8_t *data, int len);
-void osdp_decrypt(uint8_t *key, uint8_t *iv, uint8_t *data, int len);
-void osdp_get_rand(uint8_t *buf, int len);
-void osdp_crypt_teardown();
-
-#endif /* _OSDP_COMMON_H_ */
+#endif	/* _OSDP_COMMON_H_ */

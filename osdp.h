@@ -13,10 +13,10 @@
 extern "C" {
 #endif
 
-#define OSDP_CMD_TEXT_MAX_LEN	    32
-#define OSDP_CMD_KEYSET_KEY_MAX_LEN 16
-#define OSDP_CMD_MFG_MAX_DATALEN    64
-#define OSDP_EVENT_MAX_DATALEN	    64
+#define OSDP_CMD_TEXT_MAX_LEN          32
+#define OSDP_CMD_KEYSET_KEY_MAX_LEN    32
+#define OSDP_CMD_MFG_MAX_DATALEN       64
+#define OSDP_EVENT_MAX_DATALEN         64
 
 /**
  * @brief OSDP setup flags. See osdp_pd_info_t::flags
@@ -46,7 +46,13 @@ extern "C" {
 #define OSDP_DEBUGFLAG_DATA_TRACE 0x00000001 // VK2TDS
 #define OSDP_DEBUGFLAG_PACKET_TRACE 0x0000002 // VK2TDS
 
-
+/**
+ * @brief When set, CP will not error and fail when the PD sends an unknown,
+ * unsolicited response (in response to osdp_POLL command).
+ *
+ * @note In PD mode this flag has no use.
+ */
+#define OSDP_FLAG_IGN_UNSOLICITED 0x00040000
 
 /**
  * @brief Various PD capability function codes.
@@ -222,9 +228,9 @@ struct osdp_pd_cap {
 /**
  * @brief PD ID information advertised by the PD.
  *
- * @param version 3-bytes IEEE assigned OUI
+ * @param version 1-Byte Manufacturer's version number
  * @param model 1-byte Manufacturer's model number
- * @param vendor_code 1-Byte Manufacturer's version number
+ * @param vendor_code 3-bytes IEEE assigned OUI
  * @param serial_number 4-byte serial number for the PD
  * @param firmware_version 3-byte version (major, minor, build)
  */
@@ -271,7 +277,7 @@ typedef int (*osdp_write_fn_t)(void *data, uint8_t *buf, int len);
 typedef void (*osdp_flush_fn_t)(void *data);
 
 /**
- * @brief User defined communication channel abstaction for OSDP devices.
+ * @brief User defined communication channel abstraction for OSDP devices.
  * The methods for read/write/flush are expected to be non-blocking.
  *
  * @param data pointer to a block of memory that will be passed to the
@@ -295,13 +301,14 @@ struct osdp_channel {
 /**
  * @brief OSDP PD Information. This struct is used to describe a PD to LibOSDP.
  *
- * @param baud_rate Can be one of 9600/19200/38400/115200/230400
+ * @param name User provided name for this PD (log messages include this name)
+ * @param baud_rate Can be one of 9600/19200/38400/57600/115200/230400
  * @param address 7 bit PD address. the rest of the bits are ignored. The
  *        special address 0x7F is used for broadcast. So there can be 2^7-1
  *        devices on a multi-drop channel
  * @param flags Used to modify the way the context is setup. See `OSDP_FLAG_XXX`
  * @param id Static information that the PD reports to the CP when it received a
- *        `CMD_ID`. These information must be populated by a PD appliication.
+ *        `CMD_ID`. These information must be populated by a PD application.
  * @param cap This is a pointer to an array of structures containing the PD'
  *        capabilities. Use { -1, 0, 0 } to terminate the array. This is used
  *        only PD mode of operation
@@ -312,6 +319,7 @@ struct osdp_channel {
  *        the Master Key (in case of CP).
  */
 typedef struct {
+	const char *name;
 	int baud_rate;
 	int address;
 	int flags;
@@ -323,10 +331,10 @@ typedef struct {
 } osdp_pd_info_t;
 
 /**
- * @brief To keep the OSDP internal data strucutres from polluting the exposed
+ * @brief To keep the OSDP internal data structures from polluting the exposed
  * headers, they are typedefed to void before sending them to the upper layers.
- * This level of abstaction looked reasonable as _technically_ no one should
- * attempt to modify it outside fo the LibOSDP and their definition may change
+ * This level of abstraction looked reasonable as _technically_ no one should
+ * attempt to modify it outside of the LibOSDP and their definition may change
  * at any time.
  */
 typedef void osdp_t;
@@ -364,6 +372,8 @@ enum osdp_led_color_e {
 	OSDP_LED_COLOR_GREEN,
 	OSDP_LED_COLOR_AMBER,
 	OSDP_LED_COLOR_BLUE,
+	OSDP_LED_COLOR_MAGENTA,
+	OSDP_LED_COLOR_CYAN,
 	OSDP_LED_COLOR_SENTINEL
 };
 
@@ -427,7 +437,7 @@ struct osdp_cmd_buzzer {
 };
 
 /**
- * @brief Command to manuplate any display units that the PD supports.
+ * @brief Command to manipulate any display units that the PD supports.
  *
  * @param reader 0 = First Reader, 1 = Second Reader, etc.
  * @param control_code One of the following:
@@ -457,7 +467,7 @@ struct osdp_cmd_text {
  *
  * @param address Unit ID to which this PD will respond after the change takes
  *        effect.
- * @param baud_rate baud rate value 9600/19200/38400/115200/230400
+ * @param baud_rate baud rate value 9600/19200/38400/57600/115200/230400
  */
 struct osdp_cmd_comset {
 	uint8_t address;
@@ -482,11 +492,11 @@ struct osdp_cmd_keyset {
 /**
  * @brief Manufacturer Specific Commands
  *
- * @param vendor_code 3-byte IEEE assigned OUI. Most Significat 8-bits are
+ * @param vendor_code 3-byte IEEE assigned OUI. Most Significant 8-bits are
  *        unused.
  * @param command 1-byte manufacturer defined osdp command
- * @param length Length of command data
- * @param data Command data
+ * @param length Length of command data (optional)
+ * @param data Command data (optional)
  */
 struct osdp_cmd_mfg {
 	uint32_t vendor_code;
@@ -495,11 +505,15 @@ struct osdp_cmd_mfg {
 	uint8_t data[OSDP_CMD_MFG_MAX_DATALEN];
 };
 
+#define OSDP_CMD_FILE_TX_FLAG_CANCEL (1UL << 31)
+
 /**
  * @brief File transfer start command
  *
  * @param id Pre-agreed file ID between CP and PD.
- * @param flags Reserved; set to 0
+ * @param flags Reserved and set to zero by OSDP spec; bit-31 used by libOSDP
+ *              to cancel ongoing transfers (it is not sent on OSDP channel
+ *              to peer).
  */
 struct osdp_cmd_file_tx {
 	int id;
@@ -518,6 +532,7 @@ enum osdp_cmd_e {
 	OSDP_CMD_COMSET,
 	OSDP_CMD_MFG,
 	OSDP_CMD_FILE_TX,
+	OSDP_CMD_STATUS,
 	OSDP_CMD_SENTINEL
 };
 
@@ -605,26 +620,52 @@ struct osdp_event_keypress {
 /**
  * @brief OSDP Event Manufacturer Specific Command
  *
+ * Note: OSDP spec v2.2 makes this structure fixed at 4 bytes. LibOSDP allows
+ * for some additional data to be passed in this command using the data and
+ * length fields. To be fully compliant with the specification, set the length
+ * field to 0.
+ *
  * @param vendor_code 3-bytes IEEE assigned OUI of manufacturer
- * @param length Length of manufacturer data in bytes
- * @param data manufacturer data of `length` bytes
+ * @param command 1-byte reply code
+ * @param length Length of manufacturer data in bytes (optional)
+ * @param data manufacturer data of `length` bytes (optional)
  */
 struct osdp_event_mfgrep {
 	uint32_t vendor_code;
-	int command;
-	int length;
+	uint8_t command;
+	uint8_t length;
 	uint8_t data[OSDP_EVENT_MAX_DATALEN];
 };
 
 /**
- * @brief OSDP File transfer status event
+ * @brief OSDP Event input/output status
  *
- * @param fd File ID for which this event is generatated
- * @param status 0: success; -ve on errors.
+ * This event is used by the PD to indicate input/output status changes. Upto a
+ * maximum of 32 input/output status can be reported. The values of the least
+ * significant N bit of status are considered, where N is the number of items as
+ * described in the corresponding capability codes: OSDP_PD_CAP_OUTPUT_CONTROL
+ * and OSDP_PD_CAP_CONTACT_STATUS_MONITORING.
+ *
+ * @param type 0 - input; 1 - output
+ * @param status bit mask of current input status.
  */
-struct osdp_event_file_tx {
-	int fd;
-	int status;
+struct osdp_event_io {
+	int type;
+	uint32_t status;
+};
+
+/**
+ * @brief OSDP Event tamper and power status
+ *
+ * The event indicates the local tamper and power status of the PD. When either
+ * of these statuses change, PD notifies the CP as a response to POLL command.
+ *
+ * @param tamper tamper status: 0 - normal; 1 - tamper
+ * @param power power status: 0 - normal; 1 - power failure
+ */
+struct osdp_event_status {
+	uint8_t tamper;
+	uint8_t power;
 };
 
 /**
@@ -634,7 +675,8 @@ enum osdp_event_type {
 	OSDP_EVENT_CARDREAD,
 	OSDP_EVENT_KEYPRESS,
 	OSDP_EVENT_MFGREP,
-	OSDP_EVENT_FILE_TX,
+	OSDP_EVENT_IO,
+	OSDP_EVENT_STATUS,
 	OSDP_EVENT_SENTINEL
 };
 
@@ -652,53 +694,56 @@ struct osdp_event {
 		struct osdp_event_keypress keypress;
 		struct osdp_event_cardread cardread;
 		struct osdp_event_mfgrep mfgrep;
-		struct osdp_event_file_tx file_tx;
+		struct osdp_event_io io;
+		struct osdp_event_status status;
 	};
 };
 
 /**
-* @brief Callback for PD command notifications. After it has been registered
-* with `osdp_pd_set_command_callback`, this method is invoked when the PD
-* receives a command from the CP.
-*
-* @param arg pointer that will was passed to the arg param of
-* `osdp_pd_set_command_callback`.
-* @param cmd pointer to the received command.
-*
-* @retval 0 if LibOSDP must send a `osdp_ACK` response
-* @retval -ve if LibOSDP must send a `osdp_NAK` response
-* @retval +ve and modify the passed `struct osdp_cmd *cmd` if LibOSDP must send
-* a specific response. This is useful for sending manufacturer specific
-* reply ``osdp_MFGREP``.
-*/
-typedef int (*pd_commnand_callback_t)(void *arg, struct osdp_cmd *cmd);
+ * @brief Callback for PD command notifications. After it has been registered
+ * with `osdp_pd_set_command_callback`, this method is invoked when the PD
+ * receives a command from the CP.
+ *
+ * @param arg pointer that will was passed to the arg param of
+ * `osdp_pd_set_command_callback`.
+ * @param cmd pointer to the received command.
+ *
+ * @retval 0 if LibOSDP must send a `osdp_ACK` response
+ * @retval -ve if LibOSDP must send a `osdp_NAK` response
+ * @retval +ve and modify the passed `struct osdp_cmd *cmd` if LibOSDP must send
+ * a specific response. This is useful for sending manufacturer specific
+ * reply ``osdp_MFGREP``.
+ */
+typedef int (*pd_command_callback_t)(void *arg, struct osdp_cmd *cmd);
 
 /**
-* @brief Callback for CP event notifications. After is has been registered with
-* `osdp_cp_set_event_callback`, this method is invoked when the CP receives an
-* event from the PD.
-*
-* @param arg pointer that will was passed to the arg param of
-* `osdp_cp_set_event_callback`.
-* @param pd PD offset number as in `pd_info_t *`.
-* @param ev pointer to osdp_event struct (filled by libosdp).
-*
-* @retval 0 on handling the event successfully.
-* @retval -ve on errors.
-*/
+ * @brief Callback for CP event notifications. After is has been registered with
+ * `osdp_cp_set_event_callback`, this method is invoked when the CP receives an
+ * event from the PD.
+ *
+ * @param arg pointer that will was passed to the arg param of
+ * `osdp_cp_set_event_callback`.
+ * @param pd PD offset number as in `pd_info_t *`.
+ * @param ev pointer to osdp_event struct (filled by libosdp).
+ *
+ * @retval 0 on handling the event successfully.
+ * @retval -ve on errors.
+ */
 typedef int (*cp_event_callback_t)(void *arg, int pd, struct osdp_event *ev);
 
 /**
- * @brief Callback for for command completion event callbacks. After is has
+ * @brief Callback for command completion event callbacks. After it has
  * been registered with `osdp_set_command_complete_callback()` this method is
  * invoked after a command has been processed successfully in CP and PD sides.
  *
+ * @param arg pointer that was passed to the arg param of
+ * `osdp_set_command_complete_callback`.
  * @param id OSDP command ID (Note: this is not `enum osdp_cmd_e`)
  */
-typedef void (*osdp_command_complete_callback_t)(int id);
+typedef void (*osdp_command_complete_callback_t)(void *arg, int id);
 
 /* ------------------------------- */
-/*            CP Methods           */
+/*            PD Methods           */
 /* ------------------------------- */
 
 /**
@@ -706,20 +751,85 @@ typedef void (*osdp_command_complete_callback_t)(int id);
  * store the returned context poiter and pass it back to all OSDP functions
  * intact.
  *
- * @param num_pd Number of PDs connected to this CP. The `osdp_pd_info_t *` is
- *        treated as an array of length num_pd.
  * @param info Pointer to info struct populated by application.
- * @param master_key 16 byte Master Key from which the SCBK (Secure Channel Base
- *        KEY) is generated. If this field is NULL, then secure channel is
- *        disabled.
- *
- *        Note: Master key based SCBK derivation is discouraged. Pass SCBK for
- *        each connected PD in osdp_pd_info_t::scbk.
  *
  * @retval OSDP Context on success
  * @retval NULL on errors
  */
-osdp_t *osdp_cp_setup(int num_pd, osdp_pd_info_t *info, uint8_t *master_key);
+osdp_t *osdp_pd_setup(osdp_pd_info_t *info);
+
+/**
+ * @brief Periodic refresh method. Must be called by the application at least
+ * once every 50ms to meet OSDP timing requirements.
+ *
+ * @param ctx OSDP context
+ */
+void osdp_pd_refresh(osdp_t *ctx);
+
+/**
+ * @brief Cleanup all osdp resources. The context pointer is no longer valid
+ * after this call.
+ *
+ * @param ctx OSDP context
+ */
+void osdp_pd_teardown(osdp_t *ctx);
+
+/**
+ * @brief Set PD's capabilities
+ *
+ * @param ctx OSDP context
+ * @param cap pointer to array of cap (`struct osdp_pd_cap`) terminated by a
+ *        capability with cap->function_code set to 0.
+ */
+void osdp_pd_set_capabilities(osdp_t *ctx, struct osdp_pd_cap *cap);
+
+/**
+ * @brief Set callback method for PD command notification. This callback is
+ * invoked when the PD receives a command from the CP.
+ *
+ * @param ctx OSDP context
+ * @param cb The callback function's pointer
+ * @param arg A pointer that will be passed as the first argument of `cb`
+ */
+void osdp_pd_set_command_callback(osdp_t *ctx, pd_command_callback_t cb,
+				  void *arg);
+
+/**
+ * @brief API to notify PD events to CP. These events are sent to the CP as an
+ * alternate response to a POLL command.
+ *
+ * @param ctx OSDP context
+ * @param event pointer to event struct. Must be filled by application.
+ *
+ * @retval 0 on success
+ * @retval -1 on failure
+ */
+int osdp_pd_notify_event(osdp_t *ctx, struct osdp_event *event);
+
+/**
+ * @brief Deletes all events from the PD's event queue.
+ *
+ * @param ctx OSDP context
+ * @return int Count of events dequeued.
+ */
+int osdp_pd_flush_events(osdp_t *ctx);
+
+/* ------------------------------- */
+/*            CP Methods           */
+/* ------------------------------- */
+
+/**
+ * @brief Same as osdp_cp_setup; master_key is NULL here to favour the  more
+ * secure individual SCBK approach (passed via osdp_pd_info_t).
+ *
+ * @param num_pd Number of PDs connected to this CP. The `osdp_pd_info_t *` is
+ *        treated as an array of length num_pd.
+ * @param info Pointer to info struct populated by application.
+ *
+ * @retval OSDP Context on success
+ * @retval NULL on errors
+ */
+osdp_t *osdp_cp_setup(int num_pd, osdp_pd_info_t *info);
 
 /**
  * @brief Periodic refresh method. Must be called by the application at least
@@ -765,7 +875,7 @@ int osdp_cp_send_command(osdp_t *ctx, int pd, struct osdp_cmd *cmd);
  * @retval 0 on success
  * @retval -1 on failure
  */
-int osdp_cp_get_pd_id(osdp_t *ctx, int pd, struct osdp_pd_id *id);
+int osdp_cp_get_pd_id(const osdp_t *ctx, int pd, struct osdp_pd_id *id);
 
 /**
  * @brief Get capability associated to a function_code that the PD reports in
@@ -780,7 +890,7 @@ int osdp_cp_get_pd_id(osdp_t *ctx, int pd, struct osdp_pd_id *id);
  * @retval 0 on success
  * @retval -1 on failure
  */
-int osdp_cp_get_capability(osdp_t *ctx, int pd, struct osdp_pd_cap *cap);
+int osdp_cp_get_capability(const osdp_t *ctx, int pd, struct osdp_pd_cap *cap);
 
 /**
  * @brief Set callback method for CP event notification. This callback is
@@ -792,82 +902,29 @@ int osdp_cp_get_capability(osdp_t *ctx, int pd, struct osdp_pd_cap *cap);
  */
 void osdp_cp_set_event_callback(osdp_t *ctx, cp_event_callback_t cb, void *arg);
 
-/* ------------------------------- */
-/*            PD Methods           */
-/* ------------------------------- */
-
 /**
- * @brief This method is used to setup a device in PD mode. Application must
- * store the returned context poiter and pass it back to all OSDP functions
- * intact.
- *
- * @param info Pointer to iinfo struct populated by application.
- *
- * @retval OSDP Context on success
- * @retval NULL on errors
- */
-osdp_t *osdp_pd_setup(osdp_pd_info_t *info);
-
-/**
- * @brief Periodic refresh method. Must be called by the application at least
- * once every 50ms to meet OSDP timing requirements.
+ * @brief Set or clear OSDP public flags
  *
  * @param ctx OSDP context
- */
-void osdp_pd_refresh(osdp_t *ctx);
-
-/**
- * @brief Cleanup all osdp resources. The context pointer is no longer valid
- * after this call.
- *
- * @param ctx OSDP context
- */
-void osdp_pd_teardown(osdp_t *ctx);
-
-/**
- * @brief Set PD's capabilities
- *
- * @param ctx OSDP context
- * @param cap pointer to array of cap (`struct osdp_pd_cap`) terminated by a
- *        capability with cap->function_code set to 0.
- */
-void osdp_pd_set_capabilities(osdp_t *ctx, struct osdp_pd_cap *cap);
-
-/**
- * @brief Set callback method for PD command notification. This callback is
- * invoked when the PD receives a command from the CP. This function must
- * return:
- *   - 0 if LibOSDP must send a `osdp_ACK` response
- *   - -ve if LibOSDP must send a `osdp_NAK` response
- *   - +ve and modify the passed `struct osdp_cmd *cmd` if LibOSDP must send a
- *     specific response. This is useful for sending manufacturer specific reply
- *     ``osdp_MFGREP``.
- *
- * @param ctx OSDP context
- * @param cb The callback function's pointer
- * @param arg A pointer that will be passed as the first argument of `cb`
- */
-void osdp_pd_set_command_callback(osdp_t *ctx, pd_commnand_callback_t cb,
-				  void *arg);
-
-/**
- * @brief API to notify PD events to CP. These events are sent to the CP as an
- * alternate response to a POLL command.
- *
- * @param ctx OSDP context
- * @param event pointer to event struct. Must be filled by application.
+ * @param pd_idx PD offset number as in `pd_info_t *`.
+ * @param flags One or more of the public flags (OSDP_FLAG_XXX) exported from
+ *              osdp.h. Any other bits will cause this method to fail.
+ * @param do_set when true: set `flags` in ctx; when false: clear `flags` in ctx
  *
  * @retval 0 on success
  * @retval -1 on failure
+ *
+ * @note It doesn't make sense to call some initialization time flags during
+ * runtime. This method is for dynamic flags that can be turned on/off at runtime.
  */
-int osdp_pd_notify_event(osdp_t *ctx, struct osdp_event *event);
+int osdp_cp_modify_flag(osdp_t *ctx, int pd_idx, uint32_t flags, bool do_set);
 
 /* ------------------------------- */
 /*          Common Methods         */
 /* ------------------------------- */
 
 /**
- * @brief Different levels of log messages; based on importace of the message
+ * @brief Different levels of log messages; based on importance of the message
  * with LOG_EMERG being most critical to LOG_DEBUG being the least.
  */
 enum osdp_log_level_e {
@@ -883,24 +940,56 @@ enum osdp_log_level_e {
 };
 
 /**
- * @brief A printf() like method that will be used to write out log lines.
+ * @brief Puts a string to the logging medium
  *
- * @param fmt C printf() style format string. See man 3 printf
+ * @param msg a null-terminated char buffer.
  *
- * @retval number of characters written to the log stream
+ * @retval 0 on success; -ve on errors
  */
-typedef int (*osdp_log_fn_t)(const char *fmt, ...);
+typedef int (*osdp_log_puts_fn_t)(const char *msg);
+
+/**
+ * @brief A callback function to be used with external loggers
+ *
+ * @param log_level A syslog style log level. See `enum osdp_log_level_e`
+ * @param file Relative path to file which produced the log message
+ * @param line Line number in `file` which produced the log message
+ * @param msg The log message
+ */
+typedef void (*osdp_log_callback_fn_t)(int log_level, const char *file,
+				       unsigned long line, const char *msg);
 
 /**
  * @brief Configure OSDP Logging.
  *
+ * @param name A soft name for this module; will appear in all the log lines.
  * @param log_level OSDP log levels of type `enum osdp_log_level_e`. Default is
  *                  LOG_INFO.
- * @param log_fn A printf-like function that will be invoked to write the log
- *               buffer. Can be handy if you want to log to file on a UART
- *               device without putchar redirection.
+ * @param puts_fn A puts() like function that will be invoked to write the log
+ *                buffer. Can be handy if you want to log to file on a UART
+ *                device without putchar redirection. See `osdp_log_puts_fn_t`
+ *                definition to see the behavioral expectations. When this is
+ *                set to NULL, LibOSDP will log to stderr.
+ *
+ * Note: This function has to be called before osdp_{cp,pd}_setup(). Otherwise
+ *       it will be ignored.
  */
-void osdp_logger_init(int log_level, osdp_log_fn_t log_fn);
+void osdp_logger_init(const char *name, int log_level,
+		      osdp_log_puts_fn_t puts_fn);
+
+/**
+ * @brief A callback function that gets called when LibOSDP wants to emit a log
+ *        line. All messages (of all log levels) are passed on to this callback
+ *        without any log formatting. This API is for users who may already have
+ *        a logger configured in their application.
+ *
+ * @param cb The callback function. See `osdp_log_callback_fn_t` for more
+ *           details.
+ *
+ * Note: This function has to be called before osdp_{cp,pd}_setup(). Otherwise
+ *       it will be ignored.
+ */
+void osdp_set_log_callback(osdp_log_callback_fn_t cb);
 
 /**
  * @brief Get LibOSDP version as a `const char *`. Used in diagnostics.
@@ -920,25 +1009,22 @@ const char *osdp_get_source_info();
 
 /**
  * @brief Get a bit mask of number of PD that are online currently.
- * `bitmask` must be as large as (num_pds + 7 / 8).
+ *
+ * @param ctx OSDP context
+ * @param bitmask pointer to an array of bytes. must be as large as
+ *                (num_pds + 7 / 8).
  */
-void osdp_get_status_mask(osdp_t *ctx, uint8_t *bitmask);
+void osdp_get_status_mask(const osdp_t *ctx, uint8_t *bitmask);
 
 /**
  * @brief Get a bit mask of number of PD that are online and have an active
- * secure channel currently. `bitmask` must be as large as (num_pds + 7 / 8).
- */
-void osdp_get_sc_status_mask(osdp_t *ctx, uint8_t *bitmask);
-
-/**
- * @brief Set osdp_command_complete_callback_t to subscribe to osdp command or
- * event completion events. This can be used to perform post command actions
- * such as changing the baud rate of the underlying channel after a COMSET
- * command was acknowledged/issued by a peer.
+ * secure channel currently.
  *
+ * @param ctx OSDP context
+ * @param bitmask pointer to an array of bytes. must be as large as
+ *                (num_pds + 7 / 8).
  */
-void osdp_set_command_complete_callback(osdp_t *ctx,
-					osdp_command_complete_callback_t cb);
+void osdp_get_sc_status_mask(const osdp_t *ctx, uint8_t *bitmask);
 
 /**
  * @brief OSDP File operations struct that needs to be filled by the CP/PD
@@ -948,9 +1034,9 @@ void osdp_set_command_complete_callback(osdp_t *ctx,
 struct osdp_file_ops {
 	/**
 	 * @brief A opaque pointer to private data that can be filled by the
-	 * application which will be passsed as the first argument for each of
+	 * application which will be passed as the first argument for each of
 	 * the below functions. Applications can keep their file context info
-	 * such as the open file discriptors or any other private data here.
+	 * such as the open file descriptors or any other private data here.
 	 */
 	void *arg;
 
@@ -958,8 +1044,8 @@ struct osdp_file_ops {
 	 * @brief Open a pre-agreed file
 	 *
 	 * @param arg Opaque pointer to private data passed though by libosdp
-	 * @param file_id File ID of pre-aggreed file between this CP and PD
-	 * @param size Size of the file that was openned (filled by application)
+	 * @param file_id File ID of pre-agreed file between this CP and PD
+	 * @param size Size of the file that was opened (filled by application)
 	 *
 	 * @retval 0 on success. -1 on errors.
 	 */
@@ -998,13 +1084,13 @@ struct osdp_file_ops {
 	int (*write)(void *arg, const void *buf, int size, int offset);
 
 	/**
-	 * @brief Close file that corresponds to a given file discriptor
+	 * @brief Close file that corresponds to a given file descriptor
 	 *
 	 * @param arg Opaque pointer to private data passed though by libosdp
 	 *
 	 * @retval 0 on success. -1 on errors.
 	 */
-	void (*close)(void *arg);
+	int (*close)(void *arg);
 };
 
 /**
@@ -1029,10 +1115,11 @@ int osdp_file_register_ops(osdp_t *ctx, int pd_idx, struct osdp_file_ops *ops);
  * @param offset Offset into the file that has been sent/received (CP/PD)
  * @retval 0 on success. -1 on errors.
  */
-int osdp_get_file_tx_status(osdp_t *ctx, int pd_idx, int *size, int *offset);
+int osdp_get_file_tx_status(const osdp_t *ctx, int pd_idx,
+			    int *size, int *offset);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* _OSDP_H_ */
+#endif	/* _OSDP_H_ */

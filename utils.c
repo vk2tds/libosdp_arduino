@@ -9,13 +9,23 @@
 #include <stddef.h>
 #include <ctype.h>
 #include <stdlib.h>
-//#include <sys/time.h>
+#include <sys/time.h>
 
 #include "utils.h"
 
-int randint(int min, int max)
+//void gettimeofday (void){
+//}
+
+
+int randint(int limit)
 {
-	return (rand() % (max - min + 1)) + min;
+	int r;
+	int divisor = RAND_MAX / (limit + 1);
+
+	do {
+		r = rand() / divisor;
+	} while (r > limit);
+	return r;
 }
 
 uint32_t round_up_pow2(uint32_t v)
@@ -31,6 +41,18 @@ uint32_t round_up_pow2(uint32_t v)
 	return v;
 }
 
+int num_digits_in_number(int num)
+{
+	int digits = 0, n = ABS(num);
+
+	while (n > 0) {
+		digits++;
+		n /= 10;
+	}
+	return digits;
+}
+
+__attribute__((format(printf, 3, 4)))
 void hexdump(const void *p, size_t len, const char *fmt, ...)
 {
 	size_t i;
@@ -42,7 +64,7 @@ void hexdump(const void *p, size_t len, const char *fmt, ...)
 	vprintf(fmt, args);
 	va_end(args);
 
-	printf(" [%x] =>\n    0000  %02x ", len, data[0]);
+	printf(" [%zu] =>\n    0000  %02x ", len, data[0]);
 	str[0] = isprint(data[0]) ? data[0] : '.';
 	for (i = 1; i < len; i++) {
 		if ((i & 0x0f) == 0) {
@@ -86,7 +108,7 @@ void hexdump(const void *p, size_t len, const char *fmt, ...)
 
 int64_t millis_now()
 {
-	return (int64_t)(usec_now() / 1000L);
+	return (int64_t)(usec_now() / 1000LL);
 }
 
 int64_t millis_since(int64_t last)

@@ -8,6 +8,7 @@
 
 #define CONFIG_DISABLE_PRETTY_LOGGING TRUE
 
+
 #include <stdarg.h>
 #include <stdlib.h>
 #ifndef CONFIG_DISABLE_PRETTY_LOGGING
@@ -20,101 +21,6 @@
 #define OSDP_NO_EXPORT
 
 #include "osdp_common.h"
-
-#define LOG_CTX_GLOBAL -153
-#define LOG_TAG	       ""
-#ifndef PROJECT_VERSION
-#define PROJECT_VERSION "0.0.0"
-#endif
-
-#define RED   "\x1B[31m"
-#define GRN   "\x1B[32m"
-#define YEL   "\x1B[33m"
-#define BLU   "\x1B[34m"
-#define MAG   "\x1B[35m"
-#define CYN   "\x1B[36m"
-#define WHT   "\x1B[37m"
-#define RESET "\x1B[0m"
-
-const char *log_level_names[OSDP_LOG_MAX_LEVEL] = {
-	"EMERG", "ALERT", "CRIT ", "ERROR",
-	"WARN ", "NOTIC", "INFO ", "DEBUG"
-};
-
-int g_log_level = OSDP_LOG_MAX_LEVEL; /* Note: log level is not contextual */
-int g_log_ctx = LOG_CTX_GLOBAL;
-int g_old_log_ctx = LOG_CTX_GLOBAL;
-osdp_log_fn_t log_printf;
-
-void osdp_log_set_colour(int log_level)
-{
-#ifndef CONFIG_DISABLE_PRETTY_LOGGING
-	int ret, len;
-	const char *colour;
-	static const char *colours[OSDP_LOG_MAX_LEVEL] = {
-		RED, RED, RED, RED,
-		YEL, MAG, GRN, RESET
-	};
-
-	colour = (log_level < 0) ? RESET : colours[log_level];
-	len = strnlen(colour, 8);
-	if (isatty(fileno(stdout))) {
-		ret = write(fileno(stdout), colour, len);
-		assert(ret == len);
-		ARG_UNUSED(ret); /* squash warning in Release builds */
-	}
-#else
-	ARG_UNUSED(log_level);
-#endif
-}
-
-void osdp_log_ctx_set(int log_ctx)
-{
-	g_old_log_ctx = g_log_ctx;
-	g_log_ctx = log_ctx;
-}
-
-void osdp_log_ctx_reset()
-{
-	g_old_log_ctx = g_log_ctx;
-	g_log_ctx = LOG_CTX_GLOBAL;
-}
-
-void osdp_log_ctx_restore()
-{
-	g_log_ctx = g_old_log_ctx;
-}
-
-void osdp_log(int log_level, const char *fmt, ...)
-{
-	va_list args;
-	static char buf[128];
-
-	if (log_printf == NULL || log_level >= OSDP_LOG_MAX_LEVEL ||
-	    log_level > g_log_level) {
-		return;
-	}
-
-	va_start(args, fmt);
-	vsnprintf(buf, sizeof(buf), fmt, args);
-	va_end(args);
-
-	if (log_level < 0) {
-		log_printf("OSDP: %s\n", buf);
-		return;
-	}
-
-	osdp_log_set_colour(log_level);
-
-	if (g_log_ctx == LOG_CTX_GLOBAL) {
-		log_printf("OSDP: %s: %s\n", log_level_names[log_level], buf);
-	} else {
-		log_printf("OSDP: %s: PD[%d]: %s\n", log_level_names[log_level],
-			   g_log_ctx, buf);
-	}
-
-	osdp_log_set_colour(-1); /* Reset colour */
-}
 
 uint16_t crc16_itu_t(uint16_t seed, const uint8_t *src, size_t len)
 {
@@ -133,7 +39,7 @@ uint16_t osdp_compute_crc16(const uint8_t *buf, size_t len)
 	return crc16_itu_t(0x1D0F, buf, len);
 }
 
-int64_t osdp_millis_now()
+int64_t osdp_millis_now(void)
 {
 	//vk2tds
 	return millis();
@@ -146,11 +52,11 @@ int64_t osdp_millis_since(int64_t last)
 
 const char *osdp_cmd_name(int cmd_id)
 {
+	const char *name;
 	static const char * const names[] = {
 		[CMD_POLL         - CMD_POLL] = "POLL",
 		[CMD_ID           - CMD_POLL] = "ID",
 		[CMD_CAP          - CMD_POLL] = "CAP",
-		[CMD_DIAG         - CMD_POLL] = "DIAG",
 		[CMD_LSTAT        - CMD_POLL] = "LSTAT",
 		[CMD_ISTAT        - CMD_POLL] = "ISTAT",
 		[CMD_OSTAT        - CMD_POLL] = "OSTAT",
@@ -162,33 +68,35 @@ const char *osdp_cmd_name(int cmd_id)
 		[CMD_RMODE        - CMD_POLL] = "RMODE",
 		[CMD_TDSET        - CMD_POLL] = "TDSET",
 		[CMD_COMSET       - CMD_POLL] = "COMSET",
-		[CMD_DATA         - CMD_POLL] = "DATA",
-		[CMD_XMIT         - CMD_POLL] = "XMIT",
-		[CMD_PROMPT       - CMD_POLL] = "PROMPT",
-		[CMD_SPE          - CMD_POLL] = "SPE",
 		[CMD_BIOREAD      - CMD_POLL] = "BIOREAD",
 		[CMD_BIOMATCH     - CMD_POLL] = "BIOMATCH",
 		[CMD_KEYSET       - CMD_POLL] = "KEYSET",
 		[CMD_CHLNG        - CMD_POLL] = "CHLNG",
 		[CMD_SCRYPT       - CMD_POLL] = "SCRYPT",
-		[CMD_CONT         - CMD_POLL] = "CONT",
-		[CMD_ABORT        - CMD_POLL] = "ABORT",
-		[CMD_FILETRANSFER - CMD_POLL] = "FILETRANSFER",
 		[CMD_ACURXSIZE    - CMD_POLL] = "ACURXSIZE",
+		[CMD_FILETRANSFER - CMD_POLL] = "FILETRANSFER",
 		[CMD_MFG          - CMD_POLL] = "MFG",
-		[CMD_SCDONE       - CMD_POLL] = "SCDONE",
 		[CMD_XWR          - CMD_POLL] = "XWR",
+		[CMD_ABORT        - CMD_POLL] = "ABORT",
+		[CMD_PIVDATA      - CMD_POLL] = "PIVDATA",
+		[CMD_CRAUTH       - CMD_POLL] = "CRAUTH",
+		[CMD_GENAUTH      - CMD_POLL] = "GENAUTH",
 		[CMD_KEEPACTIVE   - CMD_POLL] = "KEEPACTIVE",
 	};
 
 	if (cmd_id < CMD_POLL || cmd_id > CMD_KEEPACTIVE) {
-		return NULL;
+		return "INVALID";
 	}
-	return names[cmd_id - CMD_POLL];
+	name = names[cmd_id - CMD_POLL];
+	if (name[0] == '\0') {
+		return "UNKNOWN";
+	}
+	return name;
 }
 
 const char *osdp_reply_name(int reply_id)
 {
+	const char *name;
 	static const char * const names[] = {
 		[REPLY_ACK       - REPLY_ACK] = "ACK",
 		[REPLY_NAK       - REPLY_ACK] = "NAK",
@@ -200,11 +108,8 @@ const char *osdp_reply_name(int reply_id)
 		[REPLY_RSTATR    - REPLY_ACK] = "RSTATR",
 		[REPLY_RAW       - REPLY_ACK] = "RAW",
 		[REPLY_FMT       - REPLY_ACK] = "FMT",
-		[REPLY_PRES      - REPLY_ACK] = "PRES",
 		[REPLY_KEYPPAD   - REPLY_ACK] = "KEYPPAD",
 		[REPLY_COM       - REPLY_ACK] = "COM",
-		[REPLY_SCREP     - REPLY_ACK] = "SCREP",
-		[REPLY_SPER      - REPLY_ACK] = "SPER",
 		[REPLY_BIOREADR  - REPLY_ACK] = "BIOREADR",
 		[REPLY_BIOMATCHR - REPLY_ACK] = "BIOMATCHR",
 		[REPLY_CCRYPT    - REPLY_ACK] = "CCRYPT",
@@ -212,24 +117,114 @@ const char *osdp_reply_name(int reply_id)
 		[REPLY_FTSTAT    - REPLY_ACK] = "FTSTAT",
 		[REPLY_MFGREP    - REPLY_ACK] = "MFGREP",
 		[REPLY_BUSY      - REPLY_ACK] = "BUSY",
+		[REPLY_PIVDATAR  - REPLY_ACK] = "PIVDATA",
+		[REPLY_CRAUTHR   - REPLY_ACK] = "CRAUTH",
+		[REPLY_MFGSTATR  - REPLY_ACK] = "MFGSTATR",
+		[REPLY_MFGERRR   - REPLY_ACK] = "MFGERR",
 		[REPLY_XRD       - REPLY_ACK] = "XRD",
 	};
 
 	if (reply_id < REPLY_ACK || reply_id > REPLY_XRD) {
-		return NULL;
+		return "INVALID";
 	}
-	return names[reply_id - REPLY_ACK];
+	name = names[reply_id - REPLY_ACK];
+	if (!name) {
+		return "UNKNOWN";
+	}
+	return name;
+}
+
+void osdp_keyset_complete(struct osdp_pd *pd)
+{
+	cp_keyset_complete(pd);
+}
+
+int osdp_rb_push(struct osdp_rb *p, uint8_t data)
+{
+	size_t next;
+
+	next = p->head + 1;
+	if (next >= sizeof(p->buffer))
+		next = 0;
+
+	if (next == p->tail)
+		return -1;
+
+	p->buffer[p->head] = data;
+	p->head = next;
+	return 0;
+}
+
+int osdp_rb_push_buf(struct osdp_rb *p, uint8_t *buf, int len)
+{
+	int i;
+
+	for (i = 0; i < len; i++) {
+		if (osdp_rb_push(p, buf[i])) {
+			break;
+		}
+	}
+
+	return i;
+}
+
+int osdp_rb_pop(struct osdp_rb *p, uint8_t *data)
+{
+	size_t next;
+
+	if (p->head == p->tail)
+		return -1;
+
+	next = p->tail + 1;
+	if (next >= sizeof(p->buffer))
+		next = 0;
+
+	*data = p->buffer[p->tail];
+	p->tail = next;
+	return 0;
+}
+
+int osdp_rb_pop_buf(struct osdp_rb *p, uint8_t *buf, int max_len)
+{
+	int i;
+
+	for (i = 0; i < max_len; i++) {
+		if (osdp_rb_pop(p, buf + i)) {
+			break;
+		}
+	}
+
+	return i;
 }
 
 /* --- Exported Methods --- */
 
 OSDP_EXPORT
-void osdp_logger_init(int log_level, osdp_log_fn_t log_fn)
+void osdp_logger_init(const char *name, int log_level,
+		       osdp_log_puts_fn_t log_fn)
 {
-	g_log_level = log_level;
-	if (log_fn != NULL) {
-		log_printf = log_fn;
-	}
+	logger_t ctx;
+	FILE *file = NULL;
+	int flags = LOGGER_FLAG_NONE;
+
+#ifdef CONFIG_DISABLE_PRETTY_LOGGING
+	flags |= LOGGER_FLAG_NO_COLORS;
+#endif
+	if (!log_fn)
+		file = stderr;
+
+	logger_init(&ctx, log_level, name, REPO_ROOT, log_fn, file, NULL, flags);
+	logger_set_default(&ctx); /* Mark this config as logging default */
+}
+
+OSDP_EXPORT
+void osdp_set_log_callback(osdp_log_callback_fn_t cb)
+{
+	logger_t ctx;
+	int flags = LOGGER_FLAG_NONE;
+
+	logger_init(&ctx, 0, NULL, REPO_ROOT, NULL, NULL, cb, flags);
+	logger_set_default(&ctx); /* Mark this config as logging default */
 }
 
 OSDP_EXPORT
@@ -251,7 +246,7 @@ const char *osdp_get_source_info()
 }
 
 OSDP_EXPORT
-void osdp_get_sc_status_mask(osdp_t *ctx, uint8_t *bitmask)
+void osdp_get_sc_status_mask(const osdp_t *ctx, uint8_t *bitmask)
 {
 	input_check(ctx);
 	int i, pos;
@@ -273,12 +268,17 @@ void osdp_get_sc_status_mask(osdp_t *ctx, uint8_t *bitmask)
 }
 
 OSDP_EXPORT
-void osdp_get_status_mask(osdp_t *ctx, uint8_t *bitmask)
+void osdp_get_status_mask(const osdp_t *ctx, uint8_t *bitmask)
 {
 	input_check(ctx);
 	int i, pos;
 	uint8_t *mask = bitmask;
-	struct osdp_pd *pd;
+	struct osdp_pd *pd = osdp_to_pd(ctx, 0);
+
+	if (ISSET_FLAG(pd, PD_FLAG_PD_MODE)) {
+		*mask = osdp_millis_since(pd->tstamp) < OSDP_RESP_TOUT_MS;
+		return;
+	}
 
 	*mask = 0;
 	for (i = 0; i < NUM_PD(ctx); i++) {
@@ -288,8 +288,7 @@ void osdp_get_status_mask(osdp_t *ctx, uint8_t *bitmask)
 			*mask = 0;
 		}
 		pd = osdp_to_pd(ctx, i);
-		if (ISSET_FLAG(pd, PD_FLAG_PD_MODE) ||
-		    pd->state == OSDP_CP_STATE_ONLINE) {
+		if (pd->state == OSDP_CP_STATE_ONLINE) {
 			*mask |= 1 << pos;
 		}
 	}
@@ -297,9 +296,11 @@ void osdp_get_status_mask(osdp_t *ctx, uint8_t *bitmask)
 
 OSDP_EXPORT
 void osdp_set_command_complete_callback(osdp_t *ctx,
-					osdp_command_complete_callback_t cb)
+					osdp_command_complete_callback_t cb,
+					void *arg)
 {
 	input_check(ctx);
 
 	TO_OSDP(ctx)->command_complete_callback = cb;
+	TO_OSDP(ctx)->command_complete_callback_arg = arg;
 }
