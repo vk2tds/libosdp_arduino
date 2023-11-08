@@ -82,14 +82,16 @@ static const char *get_rel_path(logger_t *ctx, const char *abs_path)
 
 static const char *get_tstamp()
 {
-	//static char time_buf[24];
+	static char time_buf[24];
 	//struct tm gmt;
 	//time_t now = time(NULL);
 
 	//gmtime_r(&now, &gmt);
 	//strftime(time_buf, sizeof(time_buf), "%Y-%m-%dT%H:%M:%S", &gmt);
-	//return time_buf;
-	return NULL; // vk2tds
+	snprintf(time_buf, sizeof(time_buf),"");
+	//time_buf[0] = 0;
+	return time_buf;
+	//return NULL; // vk2tds
 }
 
 #define LOG_BUF_LEN 128
