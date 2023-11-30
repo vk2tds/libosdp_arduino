@@ -1131,7 +1131,7 @@ osdp_t *osdp_pd_setup(osdp_pd_info_t *info)
 		memcpy(pd->sc.scbk, info->scbk, 16);
 	}
 	SET_FLAG(pd, PD_FLAG_SC_CAPABLE);
-	if (ISSET_FLAG(pd, CONFIG_OSDP_SKIP_MARK_BYTE)) {
+	if (IS_ENABLED(CONFIG_OSDP_SKIP_MARK_BYTE)) {
 		SET_FLAG(pd, PD_FLAG_PKT_SKIP_MARK);
 	}
 	osdp_pd_set_attributes(pd, info->cap, &info->id);

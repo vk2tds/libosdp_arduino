@@ -474,7 +474,7 @@ static int phy_check_packet(struct osdp_pd *pd, uint8_t *buf, int pkt_len)
 int osdp_phy_check_packet(struct osdp_pd *pd)
 {
 	int ret = OSDP_ERR_PKT_FMT;
-osdp_phy_packet_get_smb
+
 	ret = osdp_channel_receive(pd); /* always pull new bytes first */
 
 	/**
