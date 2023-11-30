@@ -57,7 +57,8 @@
 #define SET_DEBUGFLAG(p, f)	 ((p)->debugflags |= (f)) // vk2tds
 #define CLEAR_DEBUGFLAG(p, f) ((p)->debugflags &= ~(f)) // vk2tds
 
-
+#define CONFIG_OSDP_DATA_TRACE 0x01
+#define CONFIG_OSDP_PACKET_TRACE 0x02
 
 #define BYTE_0(x) (uint8_t)(((x) >> 0) & 0xFF)
 #define BYTE_1(x) (uint8_t)(((x) >> 8) & 0xFF)
@@ -353,6 +354,8 @@ struct osdp_pd {
 	/* PD command callback to app with opaque arg pointer as passed by app */
 	void *command_callback_arg;
 	pd_command_callback_t command_callback;
+
+	// uint8_t id; // vk2tds ID to differentiate callbacks
 
 	logger_t logger;       /* logger context (from utils/logger.h) */
 };

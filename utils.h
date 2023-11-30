@@ -99,6 +99,9 @@
 
 #define IS_ENABLED(x)                 __IS_ENABLED1(x)
 
+//#define IS_ENABLED(x)	(pd->debugflags && x) // VK2TDS
+
+
 /* gcc attribute shorthands */
 #ifndef __fallthrough
 #if __GNUC__ >= 7

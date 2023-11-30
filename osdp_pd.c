@@ -1131,7 +1131,7 @@ osdp_t *osdp_pd_setup(osdp_pd_info_t *info)
 		memcpy(pd->sc.scbk, info->scbk, 16);
 	}
 	SET_FLAG(pd, PD_FLAG_SC_CAPABLE);
-	if (IS_ENABLED(CONFIG_OSDP_SKIP_MARK_BYTE)) {
+	if (ISSET_FLAG(pd, CONFIG_OSDP_SKIP_MARK_BYTE)) {
 		SET_FLAG(pd, PD_FLAG_PKT_SKIP_MARK);
 	}
 	osdp_pd_set_attributes(pd, info->cap, &info->id);
@@ -1178,7 +1178,8 @@ void osdp_pd_set_capabilities(osdp_t *ctx, struct osdp_pd_cap *cap)
 }
 
 OSDP_EXPORT
-void osdp_pd_set_command_callback(osdp_t *ctx, pd_command_callback_t cb,
+void osdp_pd_set_command_callback(osdp_t *ctx, pd_command_callback_t cb, 
+					//uint8_t id, // vk2tds
 				  void *arg)
 {
 	input_check(ctx);
@@ -1186,6 +1187,7 @@ void osdp_pd_set_command_callback(osdp_t *ctx, pd_command_callback_t cb,
 
 	pd->command_callback_arg = arg;
 	pd->command_callback = cb;
+	//pd->id = id;
 }
 
 OSDP_EXPORT

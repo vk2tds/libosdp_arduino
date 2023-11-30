@@ -312,7 +312,7 @@ int osdp_phy_send_packet(struct osdp_pd *pd, uint8_t *buf,
 		return OSDP_ERR_PKT_BUILD;
 	}
 
-	if (IS_ENABLED(CONFIG_OSDP_PACKET_TRACE)) {
+	if (ISSET_DEBUGFLAG(pd, CONFIG_OSDP_PACKET_TRACE)) { // vk2tds
 		if (pd->cmd_id != CMD_POLL) {
 			osdp_dump(buf, len,
 				  "P_TRACE_SEND: %sPD[%d]%s:",
@@ -474,7 +474,7 @@ static int phy_check_packet(struct osdp_pd *pd, uint8_t *buf, int pkt_len)
 int osdp_phy_check_packet(struct osdp_pd *pd)
 {
 	int ret = OSDP_ERR_PKT_FMT;
-
+osdp_phy_packet_get_smb
 	ret = osdp_channel_receive(pd); /* always pull new bytes first */
 
 	/**
@@ -501,7 +501,7 @@ int osdp_phy_check_packet(struct osdp_pd *pd)
 	if (pd->packet_buf_len != pd->packet_len)
 		return OSDP_ERR_PKT_WAIT;
 
-	if (IS_ENABLED(CONFIG_OSDP_PACKET_TRACE)) {
+	if (ISSET_DEBUGFLAG(pd, CONFIG_OSDP_PACKET_TRACE)) { // vk2tds
 		/**
 		 * A crude way of identifying and NOT printing poll messages
 		 * when CONFIG_OSDP_PACKET_TRACE is enabled.
