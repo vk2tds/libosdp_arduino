@@ -57,8 +57,9 @@
 #define SET_DEBUGFLAG(p, f)	 ((p)->debugflags |= (f)) // vk2tds
 #define CLEAR_DEBUGFLAG(p, f) ((p)->debugflags &= ~(f)) // vk2tds
 
-#define CONFIG_OSDP_DATA_TRACE 0x01
-#define CONFIG_OSDP_PACKET_TRACE 0x02
+//#define CONFIG_OSDP_DATA_TRACE 0x01
+//#define CONFIG_OSDP_PACKET_TRACE 0x02
+//#define CONFIG_OSDP_SHOW_POLL 0x04
 
 #define BYTE_0(x) (uint8_t)(((x) >> 0) & 0xFF)
 #define BYTE_1(x) (uint8_t)(((x) >> 8) & 0xFF)

@@ -45,6 +45,7 @@ extern "C" {
 
 #define OSDP_DEBUGFLAG_DATA_TRACE 0x00000001 // VK2TDS
 #define OSDP_DEBUGFLAG_PACKET_TRACE 0x0000002 // VK2TDS
+#define OSDP_DEBUGFLAG_SHOW_POLL 0x0000004 // VK2TDS
 
 /**
  * @brief When set, CP will not error and fail when the PD sends an unknown,

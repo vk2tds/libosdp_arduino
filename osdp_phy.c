@@ -312,8 +312,9 @@ int osdp_phy_send_packet(struct osdp_pd *pd, uint8_t *buf,
 		return OSDP_ERR_PKT_BUILD;
 	}
 
-	if (ISSET_DEBUGFLAG(pd, CONFIG_OSDP_PACKET_TRACE)) { // vk2tds
-		if (pd->cmd_id != CMD_POLL) {
+	if (ISSET_DEBUGFLAG(pd, OSDP_DEBUGFLAG_PACKET_TRACE)) { // vk2tds lots
+		if ( ISSET_DEBUGFLAG(pd, OSDP_DEBUGFLAG_SHOW_POLL) | 
+			(pd->cmd_id != CMD_POLL)){
 			osdp_dump(buf, len,
 				  "P_TRACE_SEND: %sPD[%d]%s:",
 				  is_cp_mode(pd) ? "CP->" : "",
@@ -501,7 +502,7 @@ int osdp_phy_check_packet(struct osdp_pd *pd)
 	if (pd->packet_buf_len != pd->packet_len)
 		return OSDP_ERR_PKT_WAIT;
 
-	if (ISSET_DEBUGFLAG(pd, CONFIG_OSDP_PACKET_TRACE)) { // vk2tds
+	if (ISSET_DEBUGFLAG(pd, OSDP_DEBUGFLAG_PACKET_TRACE)) { // vk2tds
 		/**
 		 * A crude way of identifying and NOT printing poll messages
 		 * when CONFIG_OSDP_PACKET_TRACE is enabled.
@@ -514,14 +515,30 @@ int osdp_phy_check_packet(struct osdp_pd *pd)
 		if (sc_is_active(pd)) {
 			ret += 2;
 		}
-		if ((is_cp_mode(pd) && pd->cmd_id != CMD_POLL) ||
-		    (is_pd_mode(pd) && pd->packet_buf_len > ret &&
-		     pd->packet_buf[ret] != CMD_POLL)) {
+
+		if (is_cp_mode(pd) || // VK2TDS a lot...
+		    (is_pd_mode(pd) && pd->packet_buf_len > ret )) {
+			uint8_t show = false;
+
+
+			if (ISSET_DEBUGFLAG(pd, OSDP_DEBUGFLAG_SHOW_POLL)) { // vk2tds
+				show = true;
+			} else {
+				if ((is_cp_mode(pd) && pd->cmd_id != CMD_POLL) ||
+					(is_pd_mode(pd) && pd->packet_buf_len > ret &&
+					pd->packet_buf[ret] != CMD_POLL)) {
+						show = true;
+					}
+			}
+
+			if (show){
 			osdp_dump(pd->packet_buf, pd->packet_buf_len,
 				  "P_TRACE_RECV: %sPD[%d]%s:",
 				  is_pd_mode(pd) ? "CP->" : "",
 				  pd->address,
 				  is_cp_mode(pd) ? "->CP" : "");
+
+			}
 		}
 	}
 
