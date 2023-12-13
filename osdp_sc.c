@@ -191,6 +191,7 @@ int osdp_compute_mac(struct osdp_pd *pd, int is_cmd,
 	uint8_t buf[OSDP_PACKET_BUF_SIZE] = { 0 };
 	uint8_t iv[16];
 
+
 	memcpy(buf, data, len);
 	pad_len = (len % 16 == 0) ? len : AES_PAD_LEN(len);
 	if (len % 16 != 0) {
@@ -204,6 +205,23 @@ int osdp_compute_mac(struct osdp_pd *pd, int is_cmd,
 	 */
 
 	memcpy(iv, is_cmd ? pd->sc.r_mac : pd->sc.c_mac, 16);
+
+	if (1==1){ //vk2tds
+		if (is_cmd){
+			printf ("R_MAC = ");
+		} else {
+			printf ("C_MAC = ");
+		}
+
+		for (uint8_t i=0; i<8; i++){
+			printf ("%02X ", iv[i]);
+		}
+		//printf ("\r\n");
+		
+	}
+
+
+
 	if (pad_len > 16) {
 		/* N-1 blocks -- encrypted with SMAC-1 */
 		osdp_encrypt(pd->sc.s_mac1, iv, buf, pad_len - 16);
@@ -214,6 +232,22 @@ int osdp_compute_mac(struct osdp_pd *pd, int is_cmd,
 	/* N-th Block encrypted with SMAC-2 == MAC */
 	osdp_encrypt(pd->sc.s_mac2, iv, buf + pad_len - 16, 16);
 	memcpy(is_cmd ? pd->sc.c_mac : pd->sc.r_mac, buf + pad_len - 16, 16);
+
+	if (1==1){ // vk2tds
+		printf ("     AC_NOW=");
+		if (is_cmd){
+			for (uint8_t i=0; i<8; i++){
+				printf ("%02X ", pd->sc.c_mac[i]);
+			}
+		} else {
+			for (uint8_t i=0; i<8; i++){
+				printf ("%02X ", pd->sc.r_mac[i]);
+			}
+		}
+		printf ("\r\n");
+		
+	}
+
 
 	return 0;
 }
