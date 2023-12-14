@@ -208,16 +208,21 @@ int osdp_compute_mac(struct osdp_pd *pd, int is_cmd,
 
 	if (1==1){ //vk2tds
 		if (is_cmd){
-			printf ("R_MAC = ");
+			printf (" IV=R_MAC ");
 		} else {
-			printf ("C_MAC = ");
+			printf ("IV=C_MAC ");
 		}
 
+		printf (" C_MAC=");
 		for (uint8_t i=0; i<8; i++){
-			printf ("%02X ", iv[i]);
+			printf ("%02X ", pd->sc.c_mac[i]);
 		}
-		//printf ("\r\n");
-		
+
+		printf (" R_MAC=");
+		for (uint8_t i=0; i<8; i++){
+			printf ("%02X ", pd->sc.r_mac[i]);
+		}
+
 	}
 
 
@@ -234,12 +239,13 @@ int osdp_compute_mac(struct osdp_pd *pd, int is_cmd,
 	memcpy(is_cmd ? pd->sc.c_mac : pd->sc.r_mac, buf + pad_len - 16, 16);
 
 	if (1==1){ // vk2tds
-		printf ("     AC_NOW=");
 		if (is_cmd){
+			printf ("     C_MAC_NOW=");
 			for (uint8_t i=0; i<8; i++){
 				printf ("%02X ", pd->sc.c_mac[i]);
 			}
 		} else {
+			printf ("     R_MAC_NOW=");
 			for (uint8_t i=0; i<8; i++){
 				printf ("%02X ", pd->sc.r_mac[i]);
 			}

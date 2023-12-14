@@ -447,6 +447,8 @@ static int phy_check_packet(struct osdp_pd *pd, uint8_t *buf, int pkt_len)
 			 */
 			pd->seq_number -= 1;
 			LOG_INF("received a sequence repeat packet!");
+			memcpy (pd->sc.r_mac, pd->sc.r_mac_backup, 16); //vk2tds
+			LOG_INF("Moving MAC back a step. Wish us luck!!!");
 		}
 	} else {
 		if (comp == 0) {
