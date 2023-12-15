@@ -17,7 +17,7 @@
 #define GIT_REV                        "@GIT_REV@"
 #define GIT_TAG                        "@GIT_TAG@"
 #define GIT_DIFF                       "@GIT_DIFF@"
-#define REPO_ROOT                      "@REPO_ROOT@"
+#define REPO_ROOT                      "/Users/darryl/Documents/Arduino/libraries/" // vk2tds
 
 /**
  * @brief Other OSDP constants

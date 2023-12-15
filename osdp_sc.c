@@ -206,9 +206,9 @@ int osdp_compute_mac(struct osdp_pd *pd, int is_cmd,
 
 	memcpy(iv, is_cmd ? pd->sc.r_mac : pd->sc.c_mac, 16);
 
-	if (1==1){ //vk2tds
+	if (1==0){ //vk2tds
 		if (is_cmd){
-			printf (" IV=R_MAC ");
+			printf ("IV=R_MAC ");
 		} else {
 			printf ("IV=C_MAC ");
 		}
@@ -236,9 +236,25 @@ int osdp_compute_mac(struct osdp_pd *pd, int is_cmd,
 
 	/* N-th Block encrypted with SMAC-2 == MAC */
 	osdp_encrypt(pd->sc.s_mac2, iv, buf + pad_len - 16, 16);
+	if (!is_cmd){ //vk2tds
+		// r_mac is about to be updated. Save a copy
+		
+		memcpy (pd->sc.r_mac_backup, pd->sc.r_mac, 16);
+		if (1==0){
+			printf ("Backup R_MAC=");
+			for (uint8_t i=0; i<8; i++){
+				printf ("%02X ", pd->sc.r_mac_backup[i]);
+			}
+			printf (" R_MAC=");
+			for (uint8_t i=0; i<8; i++){
+				printf ("%02X ", pd->sc.r_mac[i]);
+			}
+			printf ("\n");
+		}
+	}
 	memcpy(is_cmd ? pd->sc.c_mac : pd->sc.r_mac, buf + pad_len - 16, 16);
 
-	if (1==1){ // vk2tds
+	if (1==0){ // vk2tds
 		if (is_cmd){
 			printf ("     C_MAC_NOW=");
 			for (uint8_t i=0; i<8; i++){

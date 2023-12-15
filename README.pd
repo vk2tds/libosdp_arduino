@@ -29,3 +29,78 @@ These live in the following respositories respectively:
 	* https://github.com/vk2tds/libosdp_arduino
 
 
+
+
+== Code Fix for Duplicate Received Packets
+
+I have been experiencing an issue where I would occasionally get the following error when using the library as a PD:
+
+`received a sequence repeat packet!`
+
+followed by
+
+`"Invalid MAC; discarding SC`.
+
+It was more than a sequence repeat packet. It was an actual duplicate packet. I surmised that the Control Panel was for some reason losing the response I was sending. After all, if I had been losing the message, I would not be seeing it. Pretty obvious.
+
+Looking into the code I set about seeing what I could do to solve this issue for me. The function `osdp_computer_mac()` is the function that was actually generating the MAC, which is used as the initialization vector for the encryption. Essentially, new transmissions rely on previous transmission. This makes it harder to break the code. This code is in the file `osdp_sc.c`.
+
+Looking at the code, I relised that if an identical packet came in that I needed to wind the encryption back. Hence, my modifications:
+
+In the file `osdp_common.h` there is a structure called `osdp_secure_channel{}`. I determined that I needed to store the MAC code that I was expecting from the CP in this structure. Because the MAC is the one that I will be receiving, the base MAC is the R_MAC. Therefore, I named the variable `r_mac_backup`.
+
+
+`struct osdp_secure_channel {
+	uint8_t scbk[16];
+	uint8_t s_enc[16];
+	uint8_t s_mac1[16];
+	uint8_t s_mac2[16];
+	uint8_t r_mac[16];
+	uint8_t r_mac_backup[16]; //vk2tds
+	uint8_t c_mac[16];
+	uint8_t cp_random[8];
+	uint8_t pd_random[8];
+	uint8_t pd_client_uid[8];
+	uint8_t cp_cryptogram[16];
+	uint8_t pd_cryptogram[16];
+};`
+
+Next was to populate this. The place to do that was the aforementioned `osdp_computer_mac()` function. Just before `pd->sc.r_mac` is overwritten with a new value, we save a copy in case we need it. This might not be the most elegant, but it works. 
+
+
+`	if (pad_len > 16) {
+		/* N-1 blocks -- encrypted with SMAC-1 */
+		osdp_encrypt(pd->sc.s_mac1, iv, buf, pad_len - 16);
+		/* N-1 th block is the IV for N th block */
+		memcpy(iv, buf + pad_len - 32, 16);
+	}
+
+	/* N-th Block encrypted with SMAC-2 == MAC */
+	osdp_encrypt(pd->sc.s_mac2, iv, buf + pad_len - 16, 16);
+	if (!is_cmd){ //vk2tds
+		// r_mac is about to be updated. Save a copy
+		memcpy (pd->sc.r_mac_backup, pd->sc.r_mac, 16);
+	}
+	memcpy(is_cmd ? pd->sc.c_mac : pd->sc.r_mac, buf + pad_len - 16, 16);
+`
+
+Finally, we need to make a change to `phy_check_packet()` in the file `osdp_phy.c`. The change here is really simple. Whenever we have a sequence repeat packet, we overwrite the `pd->sc.r_mac` with `pd->sc.r_mac_backup`. We should probably be comparing the entire packet and making sure that it was identical to the previously sent one, but this works, at least for proof of concept.
+
+`
+			LOG_INF("received a sequence repeat packet!");
+			memcpy (pd->sc.r_mac, pd->sc.r_mac_backup, 16); //vk2tds
+`
+
+And it works!
+
+There are two mods that could be made. The first is to compare the enture incoming packet with the immediately previous packet to make sure they really are ideentical.
+
+The second change might be to try `r_mac_backup` only after `r_mac` didn't work. 
+
+As for security implications, I don't think there are any. We are winding back the encryption only when the CP loses our transmission. Just like the PD has receieved an identical packet, we are effectively sending a bit-identical reply. The data cannot be used as an attack surface any more than any other packet can.
+
+
+
+
+
+
