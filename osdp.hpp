@@ -148,6 +148,12 @@ public:
 	{
 		return osdp_pd_flush_events(_ctx);
 	}
+
+	void debug (uint32_t flags)
+	{
+		osdp_pd_set_debugflags (_ctx, flags);
+	}
+
 };
 
 }; /* namespace OSDP */

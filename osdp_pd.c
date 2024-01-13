@@ -1139,8 +1139,7 @@ osdp_t *osdp_pd_setup(osdp_pd_info_t *info)
 
 	SET_FLAG(pd, PD_FLAG_PD_MODE); /* used in checks in phy */
 
-	LOG_PRINT("Setup complete - %s %s",
-		  osdp_get_version(), osdp_get_source_info());
+	LOG_PRINT("Setup complete");
 
 	return (osdp_t *)ctx;
 error:
@@ -1189,6 +1188,15 @@ void osdp_pd_set_command_callback(osdp_t *ctx, pd_command_callback_t cb,
 	pd->command_callback = cb;
 	//pd->id = id;
 }
+
+OSDP_EXPORT // vk2tds
+void osdp_pd_set_debugflags (osdp_t *ctx, uint32_t flags)
+{
+	input_check(ctx);
+	struct osdp_pd *pd = GET_CURRENT_PD(ctx);
+	pd->debugflags = flags;
+}
+
 
 OSDP_EXPORT
 int osdp_pd_notify_event(osdp_t *ctx, struct osdp_event *event)

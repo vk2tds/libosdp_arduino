@@ -8,6 +8,7 @@
 
 #define CONFIG_DISABLE_PRETTY_LOGGING TRUE
 
+unsigned long millis(void); // vk2tds
 
 #include <stdarg.h>
 #include <stdlib.h>

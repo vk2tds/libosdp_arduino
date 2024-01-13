@@ -795,6 +795,11 @@ void osdp_pd_set_capabilities(osdp_t *ctx, struct osdp_pd_cap *cap);
 void osdp_pd_set_command_callback(osdp_t *ctx, pd_command_callback_t cb,
 				  void *arg);
 
+
+// Add description VK2TDS
+void osdp_pd_set_debugflags (osdp_t *ctx, uint32_t flags);
+
+
 /**
  * @brief API to notify PD events to CP. These events are sent to the CP as an
  * alternate response to a POLL command.
