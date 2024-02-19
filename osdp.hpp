@@ -18,7 +18,7 @@ namespace OSDP {
 
 class Common {
 public:
-	Common() {}
+	Common() : _ctx(nullptr) {}
 
 	void logger_init(const char *name, int log_level,
 			 osdp_log_puts_fn_t puts_fn)
@@ -64,10 +64,7 @@ protected:
 
 class ControlPanel : public Common {
 public:
-	ControlPanel()
-	{
-		_ctx = nullptr;
-	}
+	ControlPanel() {}
 
 	~ControlPanel()
 	{
@@ -111,10 +108,7 @@ public:
 
 class PeripheralDevice : public Common {
 public:
-	PeripheralDevice()
-	{
-		_ctx = nullptr;
-	}
+	PeripheralDevice() {}
 
 	~PeripheralDevice()
 	{
@@ -134,9 +128,9 @@ public:
 		osdp_pd_refresh(_ctx);
 	}
 
-	void set_command_callback(pd_command_callback_t cb)
+	void set_command_callback(pd_command_callback_t cb, void* args)
 	{
-		osdp_pd_set_command_callback(_ctx, cb, _ctx);
+		osdp_pd_set_command_callback(_ctx, cb, args);
 	}
 
 	int notify_event(struct osdp_event *event)

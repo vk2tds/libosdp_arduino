@@ -17,24 +17,24 @@
 #include <stdlib.h>
 #endif
 
-#define CMD_POLL_DATA_LEN	0
-#define CMD_LSTAT_DATA_LEN	0
-#define CMD_ISTAT_DATA_LEN	0
-#define CMD_OSTAT_DATA_LEN	0
-#define CMD_RSTAT_DATA_LEN	0
-#define CMD_ID_DATA_LEN		1
-#define CMD_CAP_DATA_LEN	1
-#define CMD_OUT_DATA_LEN	4
-#define CMD_LED_DATA_LEN	14
-#define CMD_BUZ_DATA_LEN	5
-#define CMD_TEXT_DATA_LEN	6 /* variable length command */
-#define CMD_COMSET_DATA_LEN	5
-#define CMD_KEYSET_DATA_LEN	18
-#define CMD_CHLNG_DATA_LEN	8
-#define CMD_SCRYPT_DATA_LEN	16
-#define CMD_ABORT_DATA_LEN	0
-#define CMD_ACURXSIZE_DATA_LEN	2
-#define CMD_KEEPACTIVE_DATA_LEN 2
+#define CMD_POLL_DATA_LEN              0
+#define CMD_LSTAT_DATA_LEN             0
+#define CMD_ISTAT_DATA_LEN             0
+#define CMD_OSTAT_DATA_LEN             0
+#define CMD_RSTAT_DATA_LEN             0
+#define CMD_ID_DATA_LEN                1
+#define CMD_CAP_DATA_LEN               1
+#define CMD_OUT_DATA_LEN               4
+#define CMD_LED_DATA_LEN               14
+#define CMD_BUZ_DATA_LEN               5
+#define CMD_TEXT_DATA_LEN              6   /* variable length command */
+#define CMD_COMSET_DATA_LEN            5
+#define CMD_KEYSET_DATA_LEN            18
+#define CMD_CHLNG_DATA_LEN             8
+#define CMD_SCRYPT_DATA_LEN            16
+#define CMD_ABORT_DATA_LEN             0
+#define CMD_ACURXSIZE_DATA_LEN         2
+#define CMD_KEEPACTIVE_DATA_LEN        2
 #define CMD_MFG_DATA_LEN               4 /* variable length command */
 
 #define REPLY_ACK_LEN                  1
@@ -88,12 +88,13 @@ struct pd_event_node {
 
 static int pd_event_queue_init(struct osdp_pd *pd)
 {
-	if (slab_init(&pd->event.slab, sizeof(struct pd_event_node),
-		      pd->event.slab_blob, sizeof(pd->event.slab_blob)) < 0) {
+	if (slab_init(&pd->app_data.slab, sizeof(struct pd_event_node),
+		      pd->app_data.slab_blob,
+		      sizeof(pd->app_data.slab_blob)) < 0) {
 		LOG_ERR("Failed to initialize command slab");
 		return -1;
 	}
-	queue_init(&pd->event.queue);
+	queue_init(&pd->event_queue);
 	return 0;
 }
 
@@ -101,7 +102,7 @@ static struct osdp_event *pd_event_alloc(struct osdp_pd *pd)
 {
 	struct pd_event_node *event = NULL;
 
-	if (slab_alloc(&pd->event.slab, (void **)&event)) {
+	if (slab_alloc(&pd->app_data.slab, (void **)&event)) {
 		LOG_ERR("Event slab allocation failed");
 		return NULL;
 	}
@@ -113,7 +114,7 @@ static void pd_event_free(struct osdp_pd *pd, struct osdp_event *event)
 	struct pd_event_node *n;
 
 	n = CONTAINER_OF(event, struct pd_event_node, object);
-	slab_free(&pd->event.slab, n);
+	slab_free(&pd->app_data.slab, n);
 }
 
 static void pd_event_enqueue(struct osdp_pd *pd, struct osdp_event *event)
@@ -121,7 +122,7 @@ static void pd_event_enqueue(struct osdp_pd *pd, struct osdp_event *event)
 	struct pd_event_node *n;
 
 	n = CONTAINER_OF(event, struct pd_event_node, object);
-	queue_enqueue(&pd->event.queue, &n->node);
+	queue_enqueue(&pd->event_queue, &n->node);
 }
 
 static int pd_event_dequeue(struct osdp_pd *pd, struct osdp_event **event)
@@ -129,7 +130,7 @@ static int pd_event_dequeue(struct osdp_pd *pd, struct osdp_event **event)
 	struct pd_event_node *n;
 	queue_node_t *node;
 
-	if (queue_dequeue(&pd->event.queue, &node)) {
+	if (queue_dequeue(&pd->event_queue, &node)) {
 		return -1;
 	}
 	n = CONTAINER_OF(node, struct pd_event_node, node);
@@ -156,28 +157,24 @@ static int pd_translate_event(struct osdp_pd *pd, struct osdp_event *event)
 	case OSDP_EVENT_KEYPRESS:
 		reply_code = REPLY_KEYPPAD;
 		break;
-	case OSDP_EVENT_IO:
-		if (event->io.type) {
-			reply_code = REPLY_OSTATR;
-		} else {
+	case OSDP_EVENT_STATUS:
+		switch(event->status.type) {
+		case OSDP_STATUS_REPORT_INPUT:
 			reply_code = REPLY_ISTATR;
+			break;
+		case OSDP_STATUS_REPORT_OUTPUT:
+			reply_code = REPLY_OSTATR;
+			break;
+		case OSDP_STATUS_REPORT_LOCAL:
+			reply_code = REPLY_LSTATR;
+			break;
+		case OSDP_STATUS_REPORT_REMOTE:
+			reply_code = REPLY_RSTATR;
+			break;
 		}
 		break;
 	case OSDP_EVENT_MFGREP:
 		reply_code = REPLY_MFGREP;
-		break;
-	case OSDP_EVENT_STATUS:
-		if (event->status.tamper == 1) {
-			SET_FLAG(pd, PD_FLAG_TAMPER);
-		} else {
-			CLEAR_FLAG(pd, PD_FLAG_TAMPER);
-		}
-		if (event->status.power == 1) {
-			SET_FLAG(pd, PD_FLAG_POWER);
-		} else {
-			CLEAR_FLAG(pd, PD_FLAG_POWER);
-		}
-		reply_code = REPLY_LSTATR;
 		break;
 	default:
 		LOG_ERR("Unknown event type %d", event->type);
@@ -262,8 +259,7 @@ static int pd_cmd_cap_ok(struct osdp_pd *pd, struct osdp_cmd *cmd)
 
 	pd->reply_id = REPLY_NAK;
 	pd->ephemeral_data[0] = OSDP_PD_NAK_CMD_UNKNOWN;
-	LOG_ERR("PD is not capable of handling CMD(%02x); "
-		"Reply with NAK_CMD_UNKNOWN", pd->cmd_id);
+	LOG_ERR("PD is not capable of handling CMD(%02x); ", pd->cmd_id);
 	return 0;
 }
 
@@ -319,35 +315,67 @@ static int pd_decode_command(struct osdp_pd *pd, uint8_t *buf, int len)
 		if (len != CMD_LSTAT_DATA_LEN) {
 			break;
 		}
+		cmd.id = OSDP_CMD_STATUS;
+		cmd.status.type = OSDP_STATUS_REPORT_LOCAL;
+		if (do_command_callback(pd, &cmd)) {
+			break;
+		}
+		event = (struct osdp_event *)pd->ephemeral_data;
+		event->type = OSDP_EVENT_STATUS;
+		memcpy(&event->status, &cmd.status, sizeof(cmd.status));
 		pd->reply_id = REPLY_LSTATR;
 		ret = OSDP_PD_ERR_NONE;
 		break;
 	case CMD_ISTAT:
-		if (len != CMD_ISTAT_DATA_LEN) {
+		if (len != CMD_ISTAT_DATA_LEN || !pd->command_callback) {
 			break;
 		}
 		if (!pd_cmd_cap_ok(pd, NULL)) {
 			ret = OSDP_PD_ERR_REPLY;
 			break;
 		}
+		cmd.id = OSDP_CMD_STATUS;
+		cmd.status.type = OSDP_STATUS_REPORT_INPUT;
+		if (do_command_callback(pd, &cmd)) {
+			break;
+		}
+		event = (struct osdp_event *)pd->ephemeral_data;
+		event->type = OSDP_EVENT_STATUS;
+		memcpy(&event->status, &cmd.status, sizeof(cmd.status));
 		pd->reply_id = REPLY_ISTATR;
 		ret = OSDP_PD_ERR_NONE;
 		break;
 	case CMD_OSTAT:
-		if (len != CMD_OSTAT_DATA_LEN) {
+		if (len != CMD_OSTAT_DATA_LEN || !pd->command_callback) {
 			break;
 		}
 		if (!pd_cmd_cap_ok(pd, NULL)) {
 			ret = OSDP_PD_ERR_REPLY;
 			break;
 		}
+		cmd.id = OSDP_CMD_STATUS;
+		cmd.status.type = OSDP_STATUS_REPORT_OUTPUT;
+		if (do_command_callback(pd, &cmd)) {
+			break;
+		}
+		event = (struct osdp_event *)pd->ephemeral_data;
+		event->type = OSDP_EVENT_STATUS;
+		memcpy(&event->status, &cmd.status, sizeof(cmd.status));
 		pd->reply_id = REPLY_OSTATR;
 		ret = OSDP_PD_ERR_NONE;
 		break;
 	case CMD_RSTAT:
-		if (len != CMD_RSTAT_DATA_LEN) {
+		if (len != CMD_RSTAT_DATA_LEN || !pd->command_callback) {
 			break;
 		}
+		cmd.id = OSDP_CMD_STATUS;
+		cmd.status.type = OSDP_STATUS_REPORT_REMOTE;
+		if (do_command_callback(pd, &cmd)) {
+			break;
+		}
+		event = (struct osdp_event *)pd->ephemeral_data;
+		event->type = OSDP_EVENT_STATUS;
+		memcpy(&event->status, &cmd.status, sizeof(cmd.status));
 		pd->reply_id = REPLY_RSTATR;
 		ret = OSDP_PD_ERR_NONE;
 		break;
@@ -660,7 +688,7 @@ static int pd_decode_command(struct osdp_pd *pd, uint8_t *buf, int len)
 
 static inline void assert_buf_len(int need, int have)
 {
-	//_//_ASSERT(need < have, "OOM at build command: need:%d have:%d", //vk2tds
+	//__ASSERT(need < have, "OOM at build command: need:%d have:%d",
 	//	 need, have);
 }
 
@@ -727,40 +755,46 @@ static int pd_build_reply(struct osdp_pd *pd, uint8_t *buf, int max_len)
 		ret = OSDP_PD_ERR_NONE;
 		break;
 	case REPLY_OSTATR: {
-		int n = pd->cap[OSDP_PD_CAP_OUTPUT_CONTROL].num_items;
-
-		assert_buf_len(n + 1, max_len);
 		event = (struct osdp_event *)pd->ephemeral_data;
+		int n = pd->cap[OSDP_PD_CAP_OUTPUT_CONTROL].num_items;
+		if (event->status.nr_entries != n) {
+			break;
+		}
+		assert_buf_len(n + 1, max_len);
 		buf[len++] = pd->reply_id;
 		for (i = 0; i < n; i++) {
-			buf[len++] = !!(event->io.status & (1 << i));
+			buf[len++] = !!(event->status.mask & (1 << i));
 		}
 		ret = OSDP_PD_ERR_NONE;
 		break;
 	}
 	case REPLY_ISTATR: {
-		int n = pd->cap[OSDP_PD_CAP_CONTACT_STATUS_MONITORING].num_items;
-
-		assert_buf_len(n + 1, max_len);
 		event = (struct osdp_event *)pd->ephemeral_data;
+		int n = pd->cap[OSDP_PD_CAP_CONTACT_STATUS_MONITORING].num_items;
+		if (event->status.nr_entries != n) {
+			break;
+		}
+		assert_buf_len(n + 1, max_len);
 		buf[len++] = pd->reply_id;
 		for (i = 0; i < n; i++) {
-			buf[len++] = !!(event->io.status & (1 << i));
+			buf[len++] = !!(event->status.mask & (1 << i));
 		}
 		ret = OSDP_PD_ERR_NONE;
 		break;
 	}
 	case REPLY_LSTATR:
 		assert_buf_len(REPLY_LSTATR_LEN, max_len);
+		event = (struct osdp_event *)pd->ephemeral_data;
 		buf[len++] = pd->reply_id;
-		buf[len++] = ISSET_FLAG(pd, PD_FLAG_TAMPER);
-		buf[len++] = ISSET_FLAG(pd, PD_FLAG_POWER);
+		buf[len++] = BIT_IS_SET(event->status.mask, 0); // tamper
+		buf[len++] = BIT_IS_SET(event->status.mask, 1); // power
 		ret = OSDP_PD_ERR_NONE;
 		break;
 	case REPLY_RSTATR:
 		assert_buf_len(REPLY_RSTATR_LEN, max_len);
+		event = (struct osdp_event *)pd->ephemeral_data;
 		buf[len++] = pd->reply_id;
-		buf[len++] = ISSET_FLAG(pd, PD_FLAG_R_TAMPER);
+		buf[len++] = BIT_IS_SET(event->status.mask, 0); // power
 		ret = OSDP_PD_ERR_NONE;
 		break;
 	case REPLY_KEYPPAD:
@@ -994,7 +1028,6 @@ static inline void pd_error_reset(struct osdp_pd *pd)
 static void osdp_pd_update(struct osdp_pd *pd)
 {
 	int ret;
-	struct osdp *ctx = pd_to_osdp(pd);
 
 	/**
 	 * If secure channel is established, we need to make sure that
@@ -1040,14 +1073,11 @@ static void osdp_pd_update(struct osdp_pd *pd)
 	}
 
 	osdp_phy_state_reset(pd, false);
-	if (ctx->command_complete_callback) {
-		ctx->command_complete_callback(ctx->command_complete_callback_arg,
-					       pd->cmd_id);
-	}
 }
 
-static void osdp_pd_set_attributes(struct osdp_pd *pd, struct osdp_pd_cap *cap,
-				   struct osdp_pd_id *id)
+static void osdp_pd_set_attributes(struct osdp_pd *pd,
+				   const struct osdp_pd_cap *cap,
+				   const struct osdp_pd_id *id)
 {
 	int fc;
 
@@ -1068,7 +1098,7 @@ static void osdp_pd_set_attributes(struct osdp_pd *pd, struct osdp_pd_cap *cap,
 /* --- Exported Methods --- */
 
 OSDP_EXPORT
-osdp_t *osdp_pd_setup(osdp_pd_info_t *info)
+osdp_t *osdp_pd_setup(const osdp_pd_info_t *info)
 {
 	struct osdp_pd *pd;
 	struct osdp *ctx;
@@ -1139,7 +1169,13 @@ osdp_t *osdp_pd_setup(osdp_pd_info_t *info)
 
 	SET_FLAG(pd, PD_FLAG_PD_MODE); /* used in checks in phy */
 
-	LOG_PRINT("Setup complete");
+	if (IS_ENABLED(CONFIG_OSDP_PACKET_TRACE) ||
+	    IS_ENABLED(CONFIG_OSDP_DATA_TRACE)) {
+		osdp_packet_capture_init(pd);
+	}
+
+	LOG_PRINT("Setup complete; LibOSDP-%s %s",
+		  osdp_get_version(), osdp_get_source_info());
 
 	return (osdp_t *)ctx;
 error:
@@ -1151,9 +1187,15 @@ OSDP_EXPORT
 void osdp_pd_teardown(osdp_t *ctx)
 {
 	assert(ctx);
+	struct osdp_pd *pd = osdp_to_pd(ctx, 0);
+
+	if (IS_ENABLED(CONFIG_OSDP_PACKET_TRACE) ||
+	    IS_ENABLED(CONFIG_OSDP_DATA_TRACE)) {
+		osdp_packet_capture_finish(pd);
+	}
 
 #ifndef CONFIG_OSDP_STATIC_PD
-	safe_free(osdp_to_pd(ctx, 0));
+	safe_free(pd);
 	safe_free(ctx);
 #endif
 }
@@ -1168,7 +1210,7 @@ void osdp_pd_refresh(osdp_t *ctx)
 }
 
 OSDP_EXPORT
-void osdp_pd_set_capabilities(osdp_t *ctx, struct osdp_pd_cap *cap)
+void osdp_pd_set_capabilities(osdp_t *ctx, const struct osdp_pd_cap *cap)
 {
 	input_check(ctx);
 	struct osdp_pd *pd = GET_CURRENT_PD(ctx);
@@ -1177,8 +1219,7 @@ void osdp_pd_set_capabilities(osdp_t *ctx, struct osdp_pd_cap *cap)
 }
 
 OSDP_EXPORT
-void osdp_pd_set_command_callback(osdp_t *ctx, pd_command_callback_t cb, 
-					//uint8_t id, // vk2tds
+void osdp_pd_set_command_callback(osdp_t *ctx, pd_command_callback_t cb,
 				  void *arg)
 {
 	input_check(ctx);
@@ -1186,7 +1227,6 @@ void osdp_pd_set_command_callback(osdp_t *ctx, pd_command_callback_t cb,
 
 	pd->command_callback_arg = arg;
 	pd->command_callback = cb;
-	//pd->id = id;
 }
 
 OSDP_EXPORT // vk2tds
@@ -1199,7 +1239,7 @@ void osdp_pd_set_debugflags (osdp_t *ctx, uint32_t flags)
 
 
 OSDP_EXPORT
-int osdp_pd_notify_event(osdp_t *ctx, struct osdp_event *event)
+int osdp_pd_notify_event(osdp_t *ctx, const struct osdp_event *event)
 {
 	input_check(ctx);
 	struct osdp_event *ev;

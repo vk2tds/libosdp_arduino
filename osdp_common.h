@@ -88,6 +88,24 @@
 
 #define osdp_dump hexdump // for zephyr compatibility.
 
+//static inline __attribute__((noreturn)) void die()
+//{
+//	exit(EXIT_FAILURE);
+//	__builtin_unreachable();
+//}
+
+// #define BUG() \ vk2tds
+// 	do { \
+// 		printf("BUG at %s:%d %s()", __FILE__, __LINE__, __func__); \
+// 		die(); \
+// 	} while (0);
+
+#define BUG() \
+	do { \
+		printf("BUG at %s:%d %s()", __FILE__, __LINE__, __func__); \
+	} while (0);
+
+
 /* Unused type only to estimate ephemeral_data size */
 union osdp_ephemeral_data {
 	struct osdp_cmd cmd;
@@ -172,8 +190,8 @@ union osdp_ephemeral_data {
 #define REPLY_BIOREADR	0x57
 #define REPLY_BIOMATCHR 0x58
 #define REPLY_CCRYPT	0x76
-#define REPLY_BUSY	0x79
 #define REPLY_RMAC_I	0x78
+#define REPLY_BUSY	0x79
 #define REPLY_FTSTAT	0x7A
 #define REPLY_PIVDATAR	0x80
 #define REPLY_GENAUTHR	0x81
@@ -211,25 +229,26 @@ union osdp_ephemeral_data {
 #define PD_FLAG_PKT_HAS_MARK   BIT(11) /* Packet has mark byte */
 #define PD_FLAG_HAS_SCBK       BIT(12) /* PD has a dedicated SCBK */
 #define PD_FLAG_SC_DISABLED    BIT(13) /* master_key=NULL && scbk=NULL */
+#define PD_FLAG_PKT_BROADCAST  BIT(14) /* this packet was addressed to 0x7F */
 
 enum osdp_cp_phy_state_e {
 	OSDP_CP_PHY_STATE_IDLE,
 	OSDP_CP_PHY_STATE_SEND_CMD,
 	OSDP_CP_PHY_STATE_REPLY_WAIT,
 	OSDP_CP_PHY_STATE_WAIT,
+	OSDP_CP_PHY_STATE_DONE,
 	OSDP_CP_PHY_STATE_ERR,
 };
 
 enum osdp_cp_state_e {
 	OSDP_CP_STATE_INIT,
-	OSDP_CP_STATE_IDREQ,
 	OSDP_CP_STATE_CAPDET,
-	OSDP_CP_STATE_SC_INIT,
 	OSDP_CP_STATE_SC_CHLNG,
 	OSDP_CP_STATE_SC_SCRYPT,
 	OSDP_CP_STATE_SET_SCBK,
 	OSDP_CP_STATE_ONLINE,
-	OSDP_CP_STATE_OFFLINE
+	OSDP_CP_STATE_OFFLINE,
+	OSDP_CP_STATE_SENTINEL
 };
 
 enum osdp_pkt_errors_e {
@@ -302,10 +321,13 @@ struct osdp_rb {
     uint8_t buffer[OSDP_RX_RB_SIZE];
 };
 
-struct osdp_queue {
-	queue_t queue;
+#define OSDP_APP_DATA_QUEUE_SIZE \
+	(OSDP_CP_CMD_POOL_SIZE * \
+	 (sizeof(union osdp_ephemeral_data) + sizeof(queue_node_t)))
+
+struct osdp_app_data_pool {
 	slab_t slab;
-	uint8_t slab_blob[OSDP_QUEUE_SLAB_SIZE];
+	uint8_t slab_blob[OSDP_APP_DATA_QUEUE_SIZE];
 };
 
 struct osdp_pd {
@@ -329,6 +351,7 @@ struct osdp_pd {
 	int64_t tstamp;        /* Last POLL command issued time in ticks */
 	int64_t sc_tstamp;     /* Last received secure reply time in ticks */
 	int64_t phy_tstamp;    /* Time in ticks since command was sent */
+	uint32_t request;      /* Event loop requests */
 
 	uint16_t peer_rx_size; /* Receive buffer size of the peer PD/CP */
 
@@ -337,6 +360,7 @@ struct osdp_pd {
 	uint8_t packet_buf[OSDP_PACKET_BUF_SIZE];
 	int packet_len;
 	int packet_buf_len;
+	uint32_t packet_scan_skip;
 
 	int cmd_id;            /* Currently processing command ID */
 	int reply_id;          /* Currently processing reply ID */
@@ -345,9 +369,10 @@ struct osdp_pd {
 	uint8_t ephemeral_data[OSDP_EPHEMERAL_DATA_MAX_LEN];
 
 	union {
-		struct osdp_queue cmd;   /* Command queue (CP Mode only) */
-		struct osdp_queue event; /* Command queue (PD Mode only) */
+		queue_t cmd_queue;
+		queue_t event_queue;
 	};
+	struct osdp_app_data_pool app_data; /* alloc osdp_event / osdp_cmd */
 
 	struct osdp_channel channel;     /* PD's serial channel */
 	struct osdp_secure_channel sc;   /* Secure Channel session context */
@@ -357,9 +382,11 @@ struct osdp_pd {
 	void *command_callback_arg;
 	pd_command_callback_t command_callback;
 
-	// uint8_t id; // vk2tds ID to differentiate callbacks
+	/* logger context (from utils/logger.h) */
+	logger_t logger;
 
-	logger_t logger;       /* logger context (from utils/logger.h) */
+	/* Opaque packet capture pointer (see osdp_pcap.c) */
+	void *packet_capture_ctx;
 };
 
 struct osdp {
@@ -371,22 +398,26 @@ struct osdp {
 	int *channel_lock;     /* array of length NUM_PD() to lock a channel */
 	uint8_t sc_master_key[16]; /* Secure Channel master key (deprecated) */
 
-	/**
-	 * OSDP defined command complete callback subscription with opaque arg
-	 * pointer as passed by app
-	 **/
-	void *command_complete_callback_arg;
-	osdp_command_complete_callback_t command_complete_callback;
-
 	/* CP event callback to app with opaque arg pointer as passed by app */
 	void *event_callback_arg;
 	cp_event_callback_t event_callback;
 };
 
 #ifdef CONFIG_OSDP_STATIC_PD
-static inline void cp_keyset_complete(struct osdp_pd *pd) { }
+static inline void cp_keyset_complete(struct osdp_pd *pd, bool restart_sc) { }
 #else
-void cp_keyset_complete(struct osdp_pd *pd);
+void cp_keyset_complete(struct osdp_pd *pd, bool restart_sc);
+#endif
+
+#if defined(CONFIG_OSDP_PACKET_TRACE) || defined(CONFIG_OSDP_DATA_TRACE)
+void osdp_packet_capture_init(struct osdp_pd *pd);
+void osdp_packet_capture_finish(struct osdp_pd *pd);
+void osdp_capture_packet(struct osdp_pd *pd, uint8_t *buf, int len);
+#else
+static inline void osdp_packet_capture_init(struct osdp_pd *pd) { }
+static inline void osdp_packet_capture_finish(struct osdp_pd *pd) { }
+static inline void osdp_capture_packet(struct osdp_pd *pd,
+				       uint8_t *buf, int len) { }
 #endif
 
 void osdp_keyset_complete(struct osdp_pd *pd);
@@ -492,6 +523,22 @@ static inline void sc_deactivate(struct osdp_pd *pd)
 		osdp_sc_teardown(pd);
 	}
 	CLEAR_FLAG(pd, PD_FLAG_SC_ACTIVE);
+}
+
+static inline void make_request(struct osdp_pd *pd, uint32_t req) {
+	pd->request |= req;
+}
+
+static inline bool check_request(struct osdp_pd *pd, uint32_t req) {
+	if (pd->request & req) {
+		pd->request &= ~req;
+		return true;
+	}
+	return false;
+}
+
+static inline bool test_request(struct osdp_pd *pd, uint32_t req) {
+	return pd->request & req;
 }
 
 #endif	/* _OSDP_COMMON_H_ */

@@ -6,12 +6,12 @@
 
 #include "osdp_common.h"
 
-
-#define OSDP_PKT_MARK	0xFF
-#define OSDP_PKT_SOM	0x53
-#define PKT_CONTROL_SQN 0x03
-#define PKT_CONTROL_CRC 0x04
-#define PKT_CONTROL_SCB 0x08
+#define OSDP_PKT_MARK                  0xFF
+#define OSDP_PKT_SOM                   0x53
+#define PKT_CONTROL_SQN                0x03
+#define PKT_CONTROL_CRC                0x04
+#define PKT_CONTROL_SCB                0x08
+#define PKT_TRACE_MANGLED              0x80
 
 struct osdp_packet_header {
 	uint8_t som;
@@ -134,10 +134,7 @@ uint8_t *osdp_phy_packet_get_smb(struct osdp_pd *pd, const uint8_t *buf)
 	struct osdp_packet_header *pkt;
 
 	ARG_UNUSED(pd);
-	if (packet_has_mark(pd)) {
-		buf += 1;
-	}
-	pkt = (struct osdp_packet_header *)buf;
+	pkt = (struct osdp_packet_header *)(buf + packet_has_mark(pd));
 	if (pkt->control & PKT_CONTROL_SCB) {
 		return pkt->data;
 	}
@@ -155,7 +152,7 @@ int osdp_phy_in_sc_handshake(int is_reply, int id)
 
 int osdp_phy_packet_init(struct osdp_pd *pd, uint8_t *buf, int max_len)
 {
-	int exp_len, id, scb_len = 0, mark_byte_len = 0;
+	int exp_len, id, scb_len = 0;
 	struct osdp_packet_header *pkt;
 
 	exp_len = sizeof(struct osdp_packet_header) + 64; /* 64 is estimated */
@@ -172,8 +169,7 @@ int osdp_phy_packet_init(struct osdp_pd *pd, uint8_t *buf, int max_len)
 	    (is_cp_mode(pd) && !ISSET_FLAG(pd, PD_FLAG_PKT_SKIP_MARK))) {
 		buf[0] = OSDP_PKT_MARK;
 		buf++;
-		mark_byte_len = 1;
-		packet_set_mark(pd, true);
+		SET_FLAG(pd, PD_FLAG_PKT_HAS_MARK);
 	}
 
 	/* Fill packet header */
@@ -182,6 +178,10 @@ int osdp_phy_packet_init(struct osdp_pd *pd, uint8_t *buf, int max_len)
 	pkt->pd_address = pd->address & 0x7F;	/* Use only the lower 7 bits */
 	if (is_pd_mode(pd)) {
 		/* PD must reply with MSB of it's address set */
+		if (ISSET_FLAG(pd, PD_FLAG_PKT_BROADCAST)) {
+			pkt->pd_address = 0x7F; /* made 0xFF below */
+			CLEAR_FLAG(pd, PD_FLAG_PKT_BROADCAST);
+		}
 		pkt->pd_address |= 0x80;
 		id = pd->reply_id;
 	} else {
@@ -200,15 +200,16 @@ int osdp_phy_packet_init(struct osdp_pd *pd, uint8_t *buf, int max_len)
 		pkt->data[1] = SCS_11;
 	}
 
-	return mark_byte_len + sizeof(struct osdp_packet_header) + scb_len;
+	return (packet_has_mark(pd) +
+	        sizeof(struct osdp_packet_header) + scb_len);
 }
 
 static int osdp_phy_packet_finalize(struct osdp_pd *pd, uint8_t *buf,
 				    int len, int max_len)
 {
-	uint8_t *data;
 	uint16_t crc16;
 	struct osdp_packet_header *pkt;
+	uint8_t *data;
 	int data_len;
 
 	/* Do a sanity check only; we expect header to be pre-filled */
@@ -238,6 +239,24 @@ static int osdp_phy_packet_finalize(struct osdp_pd *pd, uint8_t *buf,
 	/* len: with 2 byte CRC */
 	pkt->len_lsb = BYTE_0(len + 2);
 	pkt->len_msb = BYTE_1(len + 2);
+
+	if (IS_ENABLED(CONFIG_OSDP_DATA_TRACE)) {
+		uint8_t control;
+
+		/**
+		 * We can potentially avoid having to set PKT_TRACE_MANGLED
+		 * here if we can get the dissector accept fully formed SCB
+		 * but non-encrypted data block. But that might lead to the
+		 * dissector parsing malformed packets as valid ones.
+		 *
+		 * See the counterpart of this in osdp_phy_decode_packet() for
+		 * more details.
+		 */
+		control = pkt->control;
+		pkt->control |= PKT_TRACE_MANGLED;
+		osdp_capture_packet(pd, (uint8_t *)pkt, len + 2);
+		pkt->control = control;
+	}
 
 	if (sc_is_active(pd) &&
 	    pkt->control & PKT_CONTROL_SCB && pkt->data[1] >= SCS_15) {
@@ -290,11 +309,7 @@ static int osdp_phy_packet_finalize(struct osdp_pd *pd, uint8_t *buf,
 	buf[len + 1] = BYTE_1(crc16);
 	len += 2;
 
-	if (packet_has_mark(pd)) {
-		len += 1; /* put back mark byte */
-	}
-
-	return len;
+	return len + packet_has_mark(pd);
 
 out_of_space_error:
 	LOG_ERR("PKT_F: Out of buffer space! CMD(%02x)", pd->cmd_id);
@@ -312,15 +327,8 @@ int osdp_phy_send_packet(struct osdp_pd *pd, uint8_t *buf,
 		return OSDP_ERR_PKT_BUILD;
 	}
 
-	if (ISSET_DEBUGFLAG(pd, OSDP_DEBUGFLAG_PACKET_TRACE)) { // vk2tds lots
-		if ( ISSET_DEBUGFLAG(pd, OSDP_DEBUGFLAG_SHOW_POLL) | 
-			(pd->cmd_id != CMD_POLL)){
-			osdp_dump(buf, len,
-				  "P_TRACE_SEND: %sPD[%d]%s:",
-				  is_cp_mode(pd) ? "CP->" : "",
-				  pd->address,
-				  is_pd_mode(pd) ? "->CP" : "");
-		}
+	if (IS_ENABLED(CONFIG_OSDP_PACKET_TRACE)) {
+		osdp_capture_packet(pd, buf, len);
 	}
 
 	ret = osdp_channel_send(pd, buf, len);
@@ -338,29 +346,41 @@ static int phy_check_header(struct osdp_pd *pd)
 	int pkt_len, len, target_len;
 	struct osdp_packet_header *pkt;
 	uint8_t cur_byte = 0, prev_byte = 0;
+	uint8_t *buf = pd->packet_buf;
 
+	/* Scan for packet start */
 	while (pd->packet_buf_len == 0) {
 		if (osdp_rb_pop(&pd->rx_rb, &cur_byte)) {
 			return OSDP_ERR_PKT_NO_DATA;
 		}
 		if (cur_byte == OSDP_PKT_SOM) {
-			pd->packet_buf[0] = OSDP_PKT_SOM;
-			pd->packet_buf_len = 1;
-			packet_set_mark(pd, prev_byte == OSDP_PKT_MARK);
+			if (prev_byte == OSDP_PKT_MARK) {
+				buf[0] = OSDP_PKT_MARK;
+				buf[1] = OSDP_PKT_SOM;
+				pd->packet_buf_len = 2;
+				SET_FLAG(pd, PD_FLAG_PKT_HAS_MARK);
+			} else {
+				buf[0] = OSDP_PKT_SOM;
+				pd->packet_buf_len = 1;
+				CLEAR_FLAG(pd, PD_FLAG_PKT_HAS_MARK);
+			}
 			break;
+		} else {
+			pd->packet_scan_skip++;
 		}
 		prev_byte = cur_byte;
 	}
 
+	/* Found start of a new packet; wait until we have atleast the header */
 	target_len = sizeof(struct osdp_packet_header);
-	len = osdp_rb_pop_buf(&pd->rx_rb, pd->packet_buf + pd->packet_buf_len,
+	len = osdp_rb_pop_buf(&pd->rx_rb, buf + pd->packet_buf_len,
 			      target_len - pd->packet_buf_len);
 	pd->packet_buf_len += len;
 	if (pd->packet_buf_len < target_len) {
 		return OSDP_ERR_PKT_WAIT;
 	}
 
-	pkt = (struct osdp_packet_header *)pd->packet_buf;
+	pkt = (struct osdp_packet_header *)(buf + packet_has_mark(pd));
 
 	/* validate packet header */
 	if (pkt->som != OSDP_PKT_SOM) {
@@ -368,9 +388,10 @@ static int phy_check_header(struct osdp_pd *pd)
 		return OSDP_ERR_PKT_FMT;
 	}
 
-	if (is_cp_mode(pd) && !(pkt->pd_address & 0x80)) {
-		LOG_ERR("Reply without address MSB set!");
-		return OSDP_ERR_PKT_FMT;
+	if ((is_cp_mode(pd) && !(pkt->pd_address & 0x80)) ||
+	    (is_pd_mode(pd) &&  (pkt->pd_address & 0x80))) {
+		LOG_WRN("Ignoring packet with invalid PD_ADDR.MSB");
+		return OSDP_ERR_PKT_SKIP;
 	}
 
 	/* validate packet length */
@@ -381,7 +402,7 @@ static int phy_check_header(struct osdp_pd *pd)
 		return OSDP_ERR_PKT_FMT;
 	}
 
-	return pkt_len;
+	return pkt_len + packet_has_mark(pd);
 }
 
 static int phy_check_packet(struct osdp_pd *pd, uint8_t *buf, int pkt_len)
@@ -390,6 +411,10 @@ static int phy_check_packet(struct osdp_pd *pd, uint8_t *buf, int pkt_len)
 	uint16_t comp, cur;
 	struct osdp_packet_header *pkt;
 
+	if (packet_has_mark(pd)) {
+		buf += 1;
+		pkt_len -= 1;
+	}
 	pkt = (struct osdp_packet_header *)buf;
 
 	/* validate CRC/checksum */
@@ -450,6 +475,15 @@ static int phy_check_packet(struct osdp_pd *pd, uint8_t *buf, int pkt_len)
 			memcpy (pd->sc.r_mac, pd->sc.r_mac_backup, 16); //vk2tds
 			LOG_INF("Moving MAC back a step. Wish us luck!!!");
 		}
+		 /**
+		 * For packets addressed to the broadcast address, the reply
+		 * must have address set to 0x7F and not the current PD's
+		 * address. To handle this case, let's capture this state in PD
+		 * flags.
+		 */
+		if (pd_addr == 0x7F) {
+			SET_FLAG(pd, PD_FLAG_PKT_BROADCAST);
+		}
 	} else {
 		if (comp == 0) {
 			/**
@@ -495,6 +529,12 @@ int osdp_phy_check_packet(struct osdp_pd *pd)
 			return ret;
 		}
 		pd->packet_len = ret;
+		if (pd->packet_scan_skip) {
+			// VK2TDS
+			//LOG_WRN("Packet scan skipped %u bytes before SoM",
+			//	pd->packet_scan_skip);
+			pd->packet_scan_skip = 0;
+		}
 	}
 
 	/* We have a valid header, collect one full packet */
@@ -553,6 +593,10 @@ int osdp_phy_decode_packet(struct osdp_pd *pd, uint8_t **pkt_start)
 	int mac_offset, is_cmd, len = pd->packet_buf_len;
 	struct osdp_packet_header *pkt;
 
+	if (packet_has_mark(pd)) {
+		buf += 1;
+		len -= 1;
+	}
 	pkt = (struct osdp_packet_header *)buf;
 	len -= pkt->control & PKT_CONTROL_CRC ? 2 : 1;
 	mac_offset = len - 4;
@@ -573,18 +617,17 @@ int osdp_phy_decode_packet(struct osdp_pd *pd, uint8_t **pkt_start)
 			return OSDP_ERR_PKT_NACK;
 		}
 		if (!sc_is_active(pd) && pkt->data[1] > SCS_14) {
-			LOG_ERR("Received invalid secure message!");
+			LOG_ERR("Invalid SCS type (%x)", pkt->data[1]);
 			pd->reply_id = REPLY_NAK;
 			pd->ephemeral_data[0] = OSDP_PD_NAK_SC_COND;
 			return OSDP_ERR_PKT_NACK;
 		}
 		if (pkt->data[1] == SCS_11 || pkt->data[1] == SCS_13) {
 			/**
-			 * CP signals PD to use SCBKD by setting SB data byte
-			 * to 0. In CP, PD_FLAG_SC_USE_SCBKD comes from FSM; on
-			 * PD we extract it from the command itself. But this
-			 * usage of SCBKD is allowed only when the PD is in
-			 * install mode (indicated by OSDP_FLAG_INSTALL_MODE).
+			 * CP signals PD to use SCBKD by setting SCB data byte
+			 * to 0. But since SCBK-D is insecure access, it's
+			 * usage is limited to install mode (a provisioning time
+			 * mode) only.
 			 */
 			if (ISSET_FLAG(pd, OSDP_FLAG_INSTALL_MODE) &&
 			    pkt->data[2] == 0) {
@@ -665,6 +708,40 @@ int osdp_phy_decode_packet(struct osdp_pd *pd, uint8_t **pkt_start)
 		}
 	}
 
+	if (IS_ENABLED(CONFIG_OSDP_DATA_TRACE)) {
+		int ret = len;
+
+		/**
+		 * Here, we move the decrypted data block right after the
+		 * header so we can pass the entire packet to the tracing
+		 * infrastructure allowing us to reuse the same protocol
+		 * dissector for regular packet trace as well as data trace
+		 * files.
+		 *
+		 * We also touch up the packet so that it can be parsed/decoded
+		 * correctly. Since none of the later states require the
+		 * header, we are free to mangle it as needed for our
+		 * convenience.
+		 *
+		 * The following changes performed:
+		 *   - Update the length field with the modifications
+		 *   - Remove `PKT_CONTROL_SCB` bit to show no sign of a secure
+		 *     channels' existence.
+		 *   - Set a new bit `PKT_TRACE_MANGLED` so the dissector can
+		 *     skip the PacketCheck bytes (maybe other housekeeping?).
+		 */
+		memmove(pkt->data, data, len);
+		*pkt_start = pkt->data;
+
+		len += sizeof(struct osdp_packet_header);
+		pkt->control &= ~PKT_CONTROL_SCB;
+		pkt->control |= PKT_TRACE_MANGLED;
+		pkt->len_lsb = BYTE_0(len);
+		pkt->len_msb = BYTE_1(len);
+		osdp_capture_packet(pd, (uint8_t *)pkt, len);
+		return ret;
+	}
+
 	*pkt_start = data;
 	return len;
 }
@@ -673,8 +750,8 @@ void osdp_phy_state_reset(struct osdp_pd *pd, bool is_error)
 {
 	pd->packet_buf_len = 0;
 	pd->packet_len = 0;
+	pd->phy_state = 0;
 	if (is_error) {
-		pd->phy_state = 0;
 		pd->seq_number = -1;
 		if (pd->channel.flush) {
 			pd->channel.flush(pd->channel.data);

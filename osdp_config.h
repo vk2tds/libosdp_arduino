@@ -25,6 +25,8 @@
 #define OSDP_PD_SC_RETRY_MS                     (600 * 1000)
 #define OSDP_PD_POLL_TIMEOUT_MS                 (50)
 #define OSDP_PD_SC_TIMEOUT_MS                   (2500) // Was 800 VK2TDS
+#define OSDP_PD_ONLINE_TOUT_MS                  (600)
+
 #define OSDP_RESP_TOUT_MS                       (200)
 #define OSDP_ONLINE_RETRY_WAIT_MAX_MS           (300 * 1000)
 #define OSDP_CMD_RETRY_WAIT_MS                  (300)

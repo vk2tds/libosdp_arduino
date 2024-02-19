@@ -137,7 +137,7 @@ const char *osdp_reply_name(int reply_id)
 
 void osdp_keyset_complete(struct osdp_pd *pd)
 {
-	cp_keyset_complete(pd);
+	cp_keyset_complete(pd, true);
 }
 
 int osdp_rb_push(struct osdp_rb *p, uint8_t data)
@@ -231,7 +231,7 @@ void osdp_set_log_callback(osdp_log_callback_fn_t cb)
 OSDP_EXPORT
 const char *osdp_get_version()
 {
-	return PROJECT_NAME "-" PROJECT_VERSION;
+	return PROJECT_VERSION;
 }
 
 OSDP_EXPORT
@@ -262,7 +262,8 @@ void osdp_get_sc_status_mask(const osdp_t *ctx, uint8_t *bitmask)
 			*mask = 0;
 		}
 		pd = osdp_to_pd(ctx, i);
-		if (ISSET_FLAG(pd, PD_FLAG_SC_ACTIVE)) {
+		if (ISSET_FLAG(pd, PD_FLAG_SC_ACTIVE) &&
+		    !ISSET_FLAG(pd, PD_FLAG_SC_USE_SCBKD)) {
 			*mask |= 1 << pos;
 		}
 	}
@@ -277,7 +278,7 @@ void osdp_get_status_mask(const osdp_t *ctx, uint8_t *bitmask)
 	struct osdp_pd *pd = osdp_to_pd(ctx, 0);
 
 	if (ISSET_FLAG(pd, PD_FLAG_PD_MODE)) {
-		*mask = osdp_millis_since(pd->tstamp) < OSDP_RESP_TOUT_MS;
+		*mask = osdp_millis_since(pd->tstamp) < OSDP_PD_ONLINE_TOUT_MS;
 		return;
 	}
 
@@ -293,15 +294,4 @@ void osdp_get_status_mask(const osdp_t *ctx, uint8_t *bitmask)
 			*mask |= 1 << pos;
 		}
 	}
-}
-
-OSDP_EXPORT
-void osdp_set_command_complete_callback(osdp_t *ctx,
-					osdp_command_complete_callback_t cb,
-					void *arg)
-{
-	input_check(ctx);
-
-	TO_OSDP(ctx)->command_complete_callback = cb;
-	TO_OSDP(ctx)->command_complete_callback_arg = arg;
 }

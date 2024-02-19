@@ -29,17 +29,12 @@ void osdp_compute_scbk(struct osdp_pd *pd, uint8_t *master_key, uint8_t *scbk)
 void osdp_compute_session_keys(struct osdp_pd *pd)
 {
 	int i;
-	struct osdp *ctx = pd_to_osdp(pd);
 	uint8_t scbk[16];
 
 	if (ISSET_FLAG(pd, PD_FLAG_SC_USE_SCBKD)) {
 		memcpy(scbk, osdp_scbk_default, 16);
 	} else {
-		if (is_cp_mode(pd) && !ISSET_FLAG(pd, PD_FLAG_HAS_SCBK)) {
-			osdp_compute_scbk(pd, ctx->sc_master_key, scbk);
-		} else {
-			memcpy(scbk, pd->sc.scbk, 16);
-		}
+		memcpy(scbk, pd->sc.scbk, 16);
 	}
 
 	memset(pd->sc.s_enc, 0, 16);
@@ -191,7 +186,6 @@ int osdp_compute_mac(struct osdp_pd *pd, int is_cmd,
 	uint8_t buf[OSDP_PACKET_BUF_SIZE] = { 0 };
 	uint8_t iv[16];
 
-
 	memcpy(buf, data, len);
 	pad_len = (len % 16 == 0) ? len : AES_PAD_LEN(len);
 	if (len % 16 != 0) {
@@ -205,28 +199,6 @@ int osdp_compute_mac(struct osdp_pd *pd, int is_cmd,
 	 */
 
 	memcpy(iv, is_cmd ? pd->sc.r_mac : pd->sc.c_mac, 16);
-
-	if (1==0){ //vk2tds
-		if (is_cmd){
-			printf ("IV=R_MAC ");
-		} else {
-			printf ("IV=C_MAC ");
-		}
-
-		printf (" C_MAC=");
-		for (uint8_t i=0; i<8; i++){
-			printf ("%02X ", pd->sc.c_mac[i]);
-		}
-
-		printf (" R_MAC=");
-		for (uint8_t i=0; i<8; i++){
-			printf ("%02X ", pd->sc.r_mac[i]);
-		}
-
-	}
-
-
-
 	if (pad_len > 16) {
 		/* N-1 blocks -- encrypted with SMAC-1 */
 		osdp_encrypt(pd->sc.s_mac1, iv, buf, pad_len - 16);

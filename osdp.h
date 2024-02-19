@@ -206,7 +206,7 @@ enum osdp_pd_nak_code_e {
 	 */
 	OSDP_PD_NAK_RECORD,
 	/**
-	 * @brief Dummy
+	 * @brief NAK codes max value
 	 */
 	OSDP_PD_NAK_SENTINEL
 };
@@ -316,8 +316,7 @@ struct osdp_channel {
  * @param channel Communication channel ops structure, containing send/recv
  *        function pointers.
  * @param scbk Pointer to 16 bytes of Secure Channel Base Key for the PD. If
- *        non-null, this is used to set-up the secure channel instead of using
- *        the Master Key (in case of CP).
+ *        non-null, this is used to set-up the secure channel.
  */
 typedef struct {
 	const char *name;
@@ -326,9 +325,9 @@ typedef struct {
 	int flags;
 	int debugflags;
 	struct osdp_pd_id id;
-	struct osdp_pd_cap *cap;
+	const struct osdp_pd_cap *cap;
 	struct osdp_channel channel;
-	uint8_t *scbk;
+	const uint8_t *scbk;
 } osdp_pd_info_t;
 
 /**
@@ -340,9 +339,58 @@ typedef struct {
  */
 typedef void osdp_t;
 
+enum osdp_status_report_type {
+	/**
+	 * @brief Status report of the inputs attached the PD
+	 */
+	OSDP_STATUS_REPORT_INPUT,
+	/**
+	 * @brief Status report of the output attached the PD
+	 */
+	OSDP_STATUS_REPORT_OUTPUT,
+	/**
+	 * @brief Local tamper and power status report
+	 *
+	 * Bit-0: tamper
+	 * Bit-1: power
+	 */
+	OSDP_STATUS_REPORT_LOCAL,
+	/**
+	 * @brief Remote tamper and power status report
+	 *
+	 * Bit-0: tamper
+	 * Bit-1: power
+	 */
+	OSDP_STATUS_REPORT_REMOTE,
+};
+
+/**
+ * @brief Status report structure. Used by OSDP_CMD_STATUS and OSDP_EVENT_STATUS.
+ * In case of command, it is used to send a query to the PD while in the case of
+ * events, the PR responds back with this structure.
+ *
+ * This can is used by the PD to indicate various status change reports. Upto
+ * a maximum of 32 statuses can be reported using this API.
+ *
+ * @param type The kind of event to report see `enum osdp_event_status_type_e`
+ * @param nr_entries Number of valid bits in `status`
+ * @param status Status bit mask
+ */
+struct osdp_status_report {
+	enum osdp_status_report_type type;
+	int nr_entries;
+	uint32_t mask;
+};
+
 /* ------------------------------- */
 /*         OSDP Commands           */
 /* ------------------------------- */
+
+#define OSDP_CMD_TEXT_MAX_LEN          32
+#define OSDP_CMD_KEYSET_KEY_MAX_LEN    32
+#define OSDP_CMD_MFG_MAX_DATALEN       64
+
+#define OSDP_CMD_FILE_TX_FLAG_CANCEL (1UL << 31)
 
 /**
  * @brief Command sent from CP to Control digital output of PD.
@@ -375,6 +423,7 @@ enum osdp_led_color_e {
 	OSDP_LED_COLOR_BLUE,
 	OSDP_LED_COLOR_MAGENTA,
 	OSDP_LED_COLOR_CYAN,
+	OSDP_LED_COLOR_WHITE,
 	OSDP_LED_COLOR_SENTINEL
 };
 
@@ -479,7 +528,6 @@ struct osdp_cmd_comset {
  * @brief This command transfers an encryption key from the CP to a PD.
  *
  * @param type Type of keys:
- *   - 0x00 - Master Key (This is not part of OSDP Spec, see gh-issue:#42)
  *   - 0x01 – Secure Channel Base Key
  * @param length Number of bytes of key data - (Key Length in bits + 7) / 8
  * @param data Key data
@@ -506,15 +554,14 @@ struct osdp_cmd_mfg {
 	uint8_t data[OSDP_CMD_MFG_MAX_DATALEN];
 };
 
-#define OSDP_CMD_FILE_TX_FLAG_CANCEL (1UL << 31)
-
 /**
  * @brief File transfer start command
  *
  * @param id Pre-agreed file ID between CP and PD.
- * @param flags Reserved and set to zero by OSDP spec; bit-31 used by libOSDP
- *              to cancel ongoing transfers (it is not sent on OSDP channel
- *              to peer).
+ * @param flags Reserved and set to zero by OSDP spec;
+ *
+ * Note: flags upper bits are used by libosdp as:
+ *   bit-31 - OSDP_CMD_FILE_TX_FLAG_CANCEL: cancel an ongoing transfer
  */
 struct osdp_cmd_file_tx {
 	int id;
@@ -560,12 +607,17 @@ struct osdp_cmd {
 		struct osdp_cmd_keyset keyset;
 		struct osdp_cmd_mfg mfg;
 		struct osdp_cmd_file_tx file_tx;
+		struct osdp_status_report status;
 	};
 };
 
 /* ------------------------------- */
 /*          OSDP Events            */
 /* ------------------------------- */
+
+#define OSDP_EVENT_CARDREAD_MAX_DATALEN   64
+#define OSDP_EVENT_KEYPRESS_MAX_DATALEN   64
+#define OSDP_EVENT_MFGREP_MAX_DATALEN     128
 
 /**
  * @brief Various card formats that a PD can support. This is sent to CP
@@ -588,7 +640,7 @@ enum osdp_event_cardread_format_e {
  * @param direction Card read direction of PD 0 - Forward; 1 - Backward
  * @param length Length of card data in bytes or bits depending on `format`
  *        (see note).
- * @param data Card data of `length` bytes or bits bits depending on `format`
+ * @param data Card data of `length` bytes or bits depending on `format`
  *        (see note).
  *
  * @note When `format` is set to OSDP_CARD_FMT_RAW_UNSPECIFIED or
@@ -601,7 +653,7 @@ struct osdp_event_cardread {
 	enum osdp_event_cardread_format_e format;
 	int direction;
 	int length;
-	uint8_t data[OSDP_EVENT_MAX_DATALEN];
+	uint8_t data[OSDP_EVENT_CARDREAD_MAX_DATALEN];
 };
 
 /**
@@ -615,7 +667,7 @@ struct osdp_event_cardread {
 struct osdp_event_keypress {
 	int reader_no;
 	int length;
-	uint8_t data[OSDP_EVENT_MAX_DATALEN];
+	uint8_t data[OSDP_EVENT_KEYPRESS_MAX_DATALEN];
 };
 
 /**
@@ -635,49 +687,32 @@ struct osdp_event_mfgrep {
 	uint32_t vendor_code;
 	uint8_t command;
 	uint8_t length;
-	uint8_t data[OSDP_EVENT_MAX_DATALEN];
-};
-
-/**
- * @brief OSDP Event input/output status
- *
- * This event is used by the PD to indicate input/output status changes. Upto a
- * maximum of 32 input/output status can be reported. The values of the least
- * significant N bit of status are considered, where N is the number of items as
- * described in the corresponding capability codes: OSDP_PD_CAP_OUTPUT_CONTROL
- * and OSDP_PD_CAP_CONTACT_STATUS_MONITORING.
- *
- * @param type 0 - input; 1 - output
- * @param status bit mask of current input status.
- */
-struct osdp_event_io {
-	int type;
-	uint32_t status;
-};
-
-/**
- * @brief OSDP Event tamper and power status
- *
- * The event indicates the local tamper and power status of the PD. When either
- * of these statuses change, PD notifies the CP as a response to POLL command.
- *
- * @param tamper tamper status: 0 - normal; 1 - tamper
- * @param power power status: 0 - normal; 1 - power failure
- */
-struct osdp_event_status {
-	uint8_t tamper;
-	uint8_t power;
+	uint8_t data[OSDP_EVENT_MFGREP_MAX_DATALEN];
 };
 
 /**
  * @brief OSDP PD Events
  */
 enum osdp_event_type {
-	OSDP_EVENT_CARDREAD,
+	/**
+	 * @brief Card read event
+	 */
+	OSDP_EVENT_CARDREAD = 1,
+	/**
+	 * @brief Key press event
+	 */
 	OSDP_EVENT_KEYPRESS,
+	/**
+	 * @brief Manufacturer specific reply event
+	 */
 	OSDP_EVENT_MFGREP,
-	OSDP_EVENT_IO,
+	/**
+	 * @brief Status event
+	 */
 	OSDP_EVENT_STATUS,
+	/**
+	 * @brief Event maximum
+	 */
 	OSDP_EVENT_SENTINEL
 };
 
@@ -695,8 +730,7 @@ struct osdp_event {
 		struct osdp_event_keypress keypress;
 		struct osdp_event_cardread cardread;
 		struct osdp_event_mfgrep mfgrep;
-		struct osdp_event_io io;
-		struct osdp_event_status status;
+		struct osdp_status_report status;
 	};
 };
 
@@ -732,24 +766,13 @@ typedef int (*pd_command_callback_t)(void *arg, struct osdp_cmd *cmd);
  */
 typedef int (*cp_event_callback_t)(void *arg, int pd, struct osdp_event *ev);
 
-/**
- * @brief Callback for command completion event callbacks. After it has
- * been registered with `osdp_set_command_complete_callback()` this method is
- * invoked after a command has been processed successfully in CP and PD sides.
- *
- * @param arg pointer that was passed to the arg param of
- * `osdp_set_command_complete_callback`.
- * @param id OSDP command ID (Note: this is not `enum osdp_cmd_e`)
- */
-typedef void (*osdp_command_complete_callback_t)(void *arg, int id);
-
 /* ------------------------------- */
 /*            PD Methods           */
 /* ------------------------------- */
 
 /**
- * @brief This method is used to setup a device in CP mode. Application must
- * store the returned context poiter and pass it back to all OSDP functions
+ * @brief This method is used to setup a device in PD mode. Application must
+ * store the returned context pointer and pass it back to all OSDP functions
  * intact.
  *
  * @param info Pointer to info struct populated by application.
@@ -757,7 +780,7 @@ typedef void (*osdp_command_complete_callback_t)(void *arg, int id);
  * @retval OSDP Context on success
  * @retval NULL on errors
  */
-osdp_t *osdp_pd_setup(osdp_pd_info_t *info);
+osdp_t *osdp_pd_setup(const osdp_pd_info_t *info);
 
 /**
  * @brief Periodic refresh method. Must be called by the application at least
@@ -782,7 +805,7 @@ void osdp_pd_teardown(osdp_t *ctx);
  * @param cap pointer to array of cap (`struct osdp_pd_cap`) terminated by a
  *        capability with cap->function_code set to 0.
  */
-void osdp_pd_set_capabilities(osdp_t *ctx, struct osdp_pd_cap *cap);
+void osdp_pd_set_capabilities(osdp_t *ctx, const struct osdp_pd_cap *cap);
 
 /**
  * @brief Set callback method for PD command notification. This callback is
@@ -810,7 +833,7 @@ void osdp_pd_set_debugflags (osdp_t *ctx, uint32_t flags);
  * @retval 0 on success
  * @retval -1 on failure
  */
-int osdp_pd_notify_event(osdp_t *ctx, struct osdp_event *event);
+int osdp_pd_notify_event(osdp_t *ctx, const struct osdp_event *event);
 
 /**
  * @brief Deletes all events from the PD's event queue.
@@ -825,8 +848,9 @@ int osdp_pd_flush_events(osdp_t *ctx);
 /* ------------------------------- */
 
 /**
- * @brief Same as osdp_cp_setup; master_key is NULL here to favour the  more
- * secure individual SCBK approach (passed via osdp_pd_info_t).
+ * @brief This method is used to setup a device in CP mode. Application must
+ * store the returned context pointer and pass it back to all OSDP functions
+ * intact.
  *
  * @param num_pd Number of PDs connected to this CP. The `osdp_pd_info_t *` is
  *        treated as an array of length num_pd.
@@ -835,7 +859,7 @@ int osdp_pd_flush_events(osdp_t *ctx);
  * @retval OSDP Context on success
  * @retval NULL on errors
  */
-osdp_t *osdp_cp_setup(int num_pd, osdp_pd_info_t *info);
+osdp_t *osdp_cp_setup(int num_pd, const osdp_pd_info_t *info);
 
 /**
  * @brief Periodic refresh method. Must be called by the application at least
@@ -866,7 +890,7 @@ void osdp_cp_teardown(osdp_t *ctx);
  * @note This method only adds the command on to a particular PD's command
  * queue. The command itself can fail due to various reasons.
  */
-int osdp_cp_send_command(osdp_t *ctx, int pd, struct osdp_cmd *cmd);
+int osdp_cp_send_command(osdp_t *ctx, int pd, const struct osdp_cmd *cmd);
 
 /**
  * @brief Get PD ID information as reported by the PD. Calling this method
@@ -1109,7 +1133,8 @@ struct osdp_file_ops {
  *
  * @retval 0 on success. -1 on errors.
  */
-int osdp_file_register_ops(osdp_t *ctx, int pd_idx, struct osdp_file_ops *ops);
+int osdp_file_register_ops(osdp_t *ctx, int pd_idx,
+			   const struct osdp_file_ops *ops);
 
 /**
  * @brief Query file transfer status if one is in progress. Calling this method
